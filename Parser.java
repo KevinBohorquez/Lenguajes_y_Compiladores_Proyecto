@@ -29,14 +29,13 @@ public class Parser {
 
     static class IdentificadorInfo {
         String nombre;
-        String tipo;           // enterito, realito, vacio, nombre de clase, etc.
+        String tipo;
         Object valor;
-        String modificador;    // variable, constantito, parámetro, metodillo, favor, clasesita, objeto
+        String modificador;
         boolean inicializada;
         int linea;
         String scope;
 
-        // Para funciones y métodos
         List<String> tiposParametros;
         List<String> nombresParametros;
 
@@ -66,7 +65,7 @@ public class Parser {
     private Map<String, IdentificadorInfo> tablaSimbolos = new HashMap<>();
     private List<String> erroresSemanticos = new ArrayList<>();
     private List<String> warnings = new ArrayList<>();
-    private Set<String> erroresReportados = new HashSet<>();  // Para evitar duplicados
+    private Set<String> erroresReportados = new HashSet<>();
 
     // =============================================================================
     // CONTROL DE CONTEXTO
@@ -77,18 +76,27 @@ public class Parser {
     private boolean esConstanteActual = false;
     private String funcionActual = "";
     private String claseActual = "";
-    private int nivelBloque = 0; // Rastrear profundidad de bloques globales
-    private int nivelBloqueFuncion = 0; // Rastrear profundidad dentro de función/método
+    private int nivelBloque = 0;
+    private int nivelBloqueFuncion = 0;
     private int nivelBucle = 0;
     private boolean dentroDeSwitch = false;
+    private String tipoSwitch = "";  // Tipo del primer case
+    private Set<Object> valoresCaseVistos = new HashSet<>();  // Valores ya usados
+    private int lineaPrimerCase = -1;
     private boolean esperandoTipoRetorno = false;
     private boolean dentroDeFuncion = false;
     private boolean acabaDeVerAclama = false;
     private boolean vieneDeAclama = false;
     private boolean acabaDeVerInvoco = false;
-    private String objetoInvocando = ""; // Para rastrear el objeto en "invoco objeto.metodo()"
+    private String objetoInvocando = "";
     private boolean dentroDeConstructor = false;
-    private boolean dentroDeMetodo = false; // Para rastrear si estamos en el cuerpo de un método
+    private boolean dentroDeMetodo = false;
+
+    // Control de arreglos constantito
+    private int tamanoArregloDeclarado = -1;
+    private List<String> elementosArreglo = new ArrayList<>();
+    private boolean dentroDeInicializacionArreglo = false;
+    private String tipoArregloActual = "";
 
     private List<ParametroInfo> parametrosActuales = new ArrayList<>();
     private String tipoRetornoActual = "";
@@ -97,15 +105,501 @@ public class Parser {
     private String nombreVarAsignando = "";
     private IdentificadorInfo varAsignando = null;
 
-    // Acumulador semántico
-    private float acumulador = 0;
-    private boolean expresionTieneReales = false;
-    private String tipoExpresionActual = "";  // Tipo detectado de la expresión actual
-    private String operadorActual = "+";
+    // Evaluador de expresiones mejorado
     private boolean dentroDeExpresion = false;
+    private List<Object> expresionTokens = new ArrayList<>();  // Almacena tokens de la expresión
+    private String tipoExpresionActual = "";
+
+    private int lineaSwitch = -1;  // Línea donde empieza el switch
+    private boolean capturandoExpresionSwitch = false;
+    private List<Token> tokensExpresionSwitch = new ArrayList<>();
+
+
 
     public Parser() {
         inicializarMapeoTokens();
+    }
+
+    // =============================================================================
+    // EVALUADOR DE EXPRESIONES CON PRECEDENCIA
+    // =============================================================================
+
+    private static class ExpresionResult {
+        float valor;
+        boolean valorBooleano;
+        boolean esReal;
+        boolean esBooleano;
+        boolean esString;      // NUEVO
+        boolean esChar;        // NUEVO
+        String tipo;
+
+        ExpresionResult(float valor, boolean esReal, String tipo) {
+            this.valor = valor;
+            this.valorBooleano = false;
+            this.esReal = esReal;
+            this.esBooleano = false;
+            this.esString = false;
+            this.esChar = false;
+            this.tipo = tipo;
+        }
+
+        // Constructor para booleanos
+        ExpresionResult(boolean valorBooleano, String tipo) {
+            this.valor = 0;
+            this.valorBooleano = valorBooleano;
+            this.esReal = false;
+            this.esBooleano = true;
+            this.esString = false;
+            this.esChar = false;
+            this.tipo = tipo;
+        }
+
+        // NUEVO: Constructor para strings y chars
+        ExpresionResult(String tipo, boolean esString, boolean esChar) {
+            this.valor = 0;
+            this.valorBooleano = false;
+            this.esReal = false;
+            this.esBooleano = false;
+            this.esString = esString;
+            this.esChar = esChar;
+            this.tipo = tipo;
+        }
+    }
+
+    private ExpresionResult evaluarExpresion(List<Object> tokens, int lineaActual) {
+        if (tokens.isEmpty()) {
+            return new ExpresionResult(0, false, "enterito");
+        }
+
+        // Convertir tokens a notación postfija (Shunting Yard)
+        List<Object> postfix = convertirAPostfija(tokens);
+
+        // Debug: imprimir expresión postfija
+        System.out.print("\n   >>> [DEBUG] Tokens de expresión: ");
+        for (Object t : tokens) {
+            System.out.print(t + " ");
+        }
+        System.out.print("\n   >>> [DEBUG] Postfija: ");
+        for (Object t : postfix) {
+            System.out.print(t + " ");
+        }
+        System.out.println();
+
+        // Evaluar expresión postfija (AHORA SÍ PASAMOS lineaActual)
+        return evaluarPostfija(postfix, lineaActual);
+    }
+
+    // ==================== DESPUÉS DEL MÉTODO evaluarExpresion() ====================
+
+    private void validarCondicionBooleana(List<Token> tokenList, int lineNumber, String contexto) {
+        if (tokenList == null || tokenList.isEmpty()) {
+            erroresSemanticos.add("❌ ERROR: Condición vacía en " + contexto + " (línea " + lineNumber + ")");
+            return;
+        }
+
+        System.out.println("\n   >>> [DEBUG] Validando condición en " + contexto);
+
+        // Convertir List<Token> a List<Object> para evaluarExpresion
+        List<Object> expresionTokens = new ArrayList<>();
+
+        for (Token t : tokenList) {
+            if (t.type == TokenType.ENTERO) {
+                expresionTokens.add(t.literal);
+            } else if (t.type == TokenType.REAL) {
+                expresionTokens.add(((Number) t.literal).floatValue());
+            } else if (t.type == TokenType.BOOLEAN) {
+                // CORREGIDO: Crear un marcador especial para booleanos
+                boolean valorBool = t.lexeme.equals("true");
+                expresionTokens.add("BOOL:" + valorBool);  // Marcador especial
+            } else if (t.type == TokenType.STRING) {
+                // CORREGIDO: Crear un marcador especial para strings
+                expresionTokens.add("STR:" + t.lexeme);  // Marcador especial
+            } else if (t.type == TokenType.CHAR) {
+                expresionTokens.add("CHAR:" + t.literal);  // Marcador especial
+            } else if (t.type == TokenType.IDENTIFICADOR) {
+                expresionTokens.add(t.lexeme);
+            } else if (t.type == TokenType.SUMA) {
+                expresionTokens.add("+");
+            } else if (t.type == TokenType.MENOS) {
+                expresionTokens.add("-");
+            } else if (t.type == TokenType.ASTERISCO) {
+                expresionTokens.add("*");
+            } else if (t.type == TokenType.DIVISION) {
+                expresionTokens.add("/");
+            } else if (t.type == TokenType.MENOR) {
+                expresionTokens.add("<");
+            } else if (t.type == TokenType.MAYOR) {
+                expresionTokens.add(">");
+            } else if (t.type == TokenType.MENOR_QUE) {
+                expresionTokens.add("<=");
+            } else if (t.type == TokenType.MAYOR_QUE) {
+                expresionTokens.add(">=");
+            } else if (t.type == TokenType.EQUIVALE) {
+                expresionTokens.add("==");
+            } else if (t.type == TokenType.DIFERENTE) {
+                expresionTokens.add("!=");
+            } else if (t.type == TokenType.AND) {
+                expresionTokens.add("&&");
+            } else if (t.type == TokenType.OR) {
+                expresionTokens.add("||");
+            } else if (t.type == TokenType.PAREN_IZQ) {
+                expresionTokens.add("(");
+            } else if (t.type == TokenType.PAREN_DER) {
+                expresionTokens.add(")");
+            }
+        }
+
+        ExpresionResult resultado = evaluarExpresion(expresionTokens, lineNumber);
+
+        if (!resultado.tipo.equals("booleanito")) {
+            erroresSemanticos.add("❌ ERROR: La condición en " + contexto +
+                    " no contiene un tipo de dato booleanito (línea " + lineNumber + ")");
+        }
+    }
+
+    private List<Object> convertirAPostfija(List<Object> infix) {
+        List<Object> output = new ArrayList<>();
+        Stack<String> operators = new Stack<>();
+
+        for (Object token : infix) {
+            if (token instanceof Number) {
+                // Número directo a la salida
+                output.add(token);
+            } else if (token instanceof String) {
+                String str = (String) token;
+
+
+                if (str.equals("(")) {
+                    operators.push(str);
+                } else if (str.equals(")")) {
+                    // Desapilar hasta encontrar (
+                    while (!operators.isEmpty() && !operators.peek().equals("(")) {
+                        output.add(operators.pop());
+                    }
+                    if (!operators.isEmpty()) {
+                        operators.pop(); // Quitar el (
+                    }
+                } else if (esOperador(str)) {
+                    // Es operador aritmético
+                    while (!operators.isEmpty() &&
+                            !operators.peek().equals("(") &&
+                            precedencia(operators.peek()) >= precedencia(str)) {
+                        output.add(operators.pop());
+                    }
+                    operators.push(str);
+                } else {
+                    // Es variable o identificador
+                    output.add(token);
+                }
+            }
+        }
+
+        // Vaciar operadores restantes
+        while (!operators.isEmpty()) {
+            String op = operators.pop();
+            if (!op.equals("(") && !op.equals(")")) {
+                output.add(op);
+            }
+        }
+
+        return output;
+    }
+
+    private ExpresionResult evaluarPostfija(List<Object> postfix, int lineaActual) {
+        Stack<ExpresionResult> stack = new Stack<>();
+        boolean tieneReales = false;
+        String tipoDetectado = "enterito";
+
+        for (Object token : postfix) {
+            if (token instanceof Integer) {
+                stack.push(new ExpresionResult(((Integer) token).floatValue(), false, "enterito"));
+            } else if (token instanceof Float || token instanceof Double) {
+                float valor = ((Number) token).floatValue();
+                stack.push(new ExpresionResult(valor, true, "realito"));
+                tieneReales = true;
+                tipoDetectado = "realito";
+            } else if (token instanceof String) {
+                String str = (String) token;
+
+                if (str.startsWith("BOOL:")) {
+                    boolean valor = str.substring(5).equals("true");
+                    stack.push(new ExpresionResult(valor, "booleanito"));
+                    tipoDetectado = "booleanito";
+                    continue;
+                } else if (str.startsWith("STR:")) {
+                    // CORREGIDO: Usa el nuevo constructor
+                    stack.push(new ExpresionResult("cadenita", true, false));
+                    tipoDetectado = "cadenita";
+                    continue;
+                } else if (str.startsWith("CHAR:")) {
+                    // CORREGIDO: Usa el nuevo constructor
+                    stack.push(new ExpresionResult("charsito", false, true));
+                    tipoDetectado = "charsito";
+                    continue;
+                }
+
+                // OPERADORES ARITMÉTICOS
+                // OPERADORES ARITMÉTICOS
+                if (esOperadorAritmetico(str)) {
+                    if (stack.size() < 2) {
+                        System.out.println("\n   >>> [ERROR DEBUG] Pila insuficiente para operador: " + str);
+                        continue;
+                    }
+
+                    ExpresionResult b = stack.pop();
+                    ExpresionResult a = stack.pop();
+
+                    // ========== VALIDACIÓN CRÍTICA: OPERADORES ARITMÉTICOS SOLO ENTRE NÚMEROS ==========
+                    boolean aEsNumero = (a.tipo.equals("enterito") || a.tipo.equals("realito"));
+                    boolean bEsNumero = (b.tipo.equals("enterito") || b.tipo.equals("realito"));
+
+                    if (!aEsNumero || !bEsNumero) {
+                        // ERROR: Intentando usar operadores aritméticos con tipos no numéricos
+                        if (!aEsNumero) {
+                            erroresSemanticos.add("❌ ERROR: No se puede usar el operador aritmético '" + str +
+                                    "' con tipo " + a.tipo.toUpperCase() + " (línea " + lineaActual + ")");
+                        }
+                        if (!bEsNumero) {
+                            erroresSemanticos.add("❌ ERROR: No se puede usar el operador aritmético '" + str +
+                                    "' con tipo " + b.tipo.toUpperCase() + " (línea " + lineaActual + ")");
+                        }
+
+                        // Mantener un resultado de error pero con tipo realito para evitar confusión
+                        stack.push(new ExpresionResult(0.0f, true, "realito"));
+                        tieneReales = true;
+                        tipoDetectado = "realito";
+                        continue;
+                    }
+                    // ==================================================================================
+
+                    // Si ambos son números, proceder normalmente
+                    if (b.esReal || a.esReal) {
+                        tieneReales = true;
+                        tipoDetectado = "realito";
+                    }
+
+                    float resultado = aplicarOperacion(a.valor, b.valor, str);
+                    System.out.println("   >>> [DEBUG] " + a.valor + " " + str + " " + b.valor + " = " + resultado);
+                    stack.push(new ExpresionResult(resultado, tieneReales, tipoDetectado));
+                }
+                // Operadores de comparación
+                else if (esOperadorComparacion(str)) {
+                    if (stack.size() < 2) {
+                        System.out.println("\n   >>> [ERROR DEBUG] Pila insuficiente para operador: " + str);
+                        continue;
+                    }
+
+                    ExpresionResult b = stack.pop();
+                    ExpresionResult a = stack.pop();
+
+                    boolean comparacionValida = false;
+
+                    // Números se pueden comparar entre sí (enterito con realito)
+                    if ((a.tipo.equals("enterito") || a.tipo.equals("realito")) &&
+                            (b.tipo.equals("enterito") || b.tipo.equals("realito"))) {
+                        comparacionValida = true;
+                    }
+                    // Booleans solo con booleans (SOLO == y !=)
+                    else if (a.tipo.equals("booleanito") && b.tipo.equals("booleanito")) {
+                        if (str.equals("==") || str.equals("!=")) {
+                            comparacionValida = true;
+                        }
+                    }
+                    // Cadenas solo con cadenas (SOLO == y !=)
+                    else if (a.tipo.equals("cadenita") && b.tipo.equals("cadenita")) {
+                        if (str.equals("==") || str.equals("!=")) {
+                            comparacionValida = true;
+                        }
+                    }
+                    // Chars solo con chars
+                    else if (a.tipo.equals("charsito") && b.tipo.equals("charsito")) {
+                        comparacionValida = true;
+                    }
+
+                    if (!comparacionValida) {
+                        erroresSemanticos.add("❌ ERROR: No se pueden comparar " +
+                                a.tipo.toUpperCase() + " con " + b.tipo.toUpperCase() +
+                                " usando el operador '" + str + "' (línea " + lineaActual + ")");
+                        stack.push(new ExpresionResult(false, "booleanito"));
+                        continue;
+                    }
+
+                    boolean resultadoComparacion = aplicarComparacion(a.valor, b.valor, str);
+                    System.out.println("   >>> [DEBUG] " + a.valor + " " + str + " " + b.valor + " = " + resultadoComparacion);
+
+                    stack.push(new ExpresionResult(resultadoComparacion, "booleanito"));
+                }
+                // Operadores lógicos
+                else if (esOperadorLogico(str)) {
+                    if (stack.size() < 2) {
+                        System.out.println("\n   >>> [ERROR DEBUG] Pila insuficiente para operador: " + str);
+                        continue;
+                    }
+
+                    ExpresionResult b = stack.pop();
+                    ExpresionResult a = stack.pop();
+
+                    // ========== VALIDACIÓN: OPERADORES LÓGICOS SOLO ENTRE BOOLEANOS ==========
+                    if (!a.tipo.equals("booleanito") || !b.tipo.equals("booleanito")) {
+                        if (!a.tipo.equals("booleanito")) {
+                            erroresSemanticos.add("❌ ERROR: No se puede usar el operador lógico '" + str +
+                                    "' con tipo " + a.tipo.toUpperCase() + " (línea " + lineaActual + ")");
+                        }
+                        if (!b.tipo.equals("booleanito")) {
+                            erroresSemanticos.add("❌ ERROR: No se puede usar el operador lógico '" + str +
+                                    "' con tipo " + b.tipo.toUpperCase() + " (línea " + lineaActual + ")");
+                        }
+                        stack.push(new ExpresionResult(false, "booleanito"));
+                        continue;
+                    }
+                    // ========================================================================
+
+                    boolean resultado = aplicarOperadorLogico(a.valorBooleano, b.valorBooleano, str);
+                    System.out.println("   >>> [DEBUG] " + a.valorBooleano + " " + str + " " + b.valorBooleano + " = " + resultado);
+                    stack.push(new ExpresionResult(resultado, "booleanito"));
+                }
+                // Variable
+                else {
+                    String scope = obtenerScopeActual();
+                    IdentificadorInfo var = buscarIdentificador(scope + "." + str);
+                    if (var == null) var = buscarIdentificador("global." + str);
+
+                    if (var != null) {
+                        String tipoVar = var.tipo;
+
+                        // Actualizar tipo detectado según prioridad
+                        if (tipoVar.equals("booleanito")) {
+                            tipoDetectado = "booleanito";
+                        } else if (tipoVar.equals("cadenita") && !tipoDetectado.equals("booleanito")) {
+                            tipoDetectado = "cadenita";
+                        } else if (tipoVar.equals("charsito") && !tipoDetectado.equals("booleanito") && !tipoDetectado.equals("cadenita")) {
+                            tipoDetectado = "charsito";
+                        } else if (tipoVar.equals("realito") && tipoDetectado.equals("enterito")) {
+                            tieneReales = true;
+                            tipoDetectado = "realito";
+                        }
+
+                        // Agregar al stack
+                        if (var.valor instanceof Number) {
+                            float valor = ((Number) var.valor).floatValue();
+                            boolean esReal = tipoVar.equals("realito");
+                            stack.push(new ExpresionResult(valor, esReal, tipoVar));
+                        } else if (var.valor instanceof Boolean) {
+                            stack.push(new ExpresionResult((Boolean) var.valor, tipoVar));
+                        } else if (tipoVar.equals("cadenita")) {
+                            // Es string
+                            stack.push(new ExpresionResult("cadenita", true, false));
+                        } else if (tipoVar.equals("charsito")) {
+                            // Es char
+                            stack.push(new ExpresionResult("charsito", false, true));
+                        } else {
+                            // Otros tipos
+                            stack.push(new ExpresionResult(0, false, tipoVar));
+                        }
+                    } else {
+                        stack.push(new ExpresionResult(0, false, "enterito"));
+                    }
+                }
+            }
+        }
+
+        if (stack.isEmpty()) {
+            return new ExpresionResult(0, false, "enterito");
+        }
+
+        ExpresionResult resultado = stack.pop();
+
+        // IMPORTANTE: No sobrescribir el tipo si ya es correcto
+        if (resultado.esBooleano) {
+            // Mantener como booleanito
+        } else if (resultado.esString) {
+            resultado.tipo = "cadenita";
+        } else if (resultado.esChar) {
+            resultado.tipo = "charsito";
+        } else {
+            // Solo para números
+            resultado.esReal = tieneReales;
+            if (!resultado.tipo.equals("booleanito") &&
+                    !resultado.tipo.equals("cadenita") &&
+                    !resultado.tipo.equals("charsito")) {
+                resultado.tipo = tipoDetectado;
+            }
+        }
+
+        return resultado;
+    }
+
+    private boolean esOperador(String str) {
+        return esOperadorAritmetico(str) || esOperadorComparacion(str) || esOperadorLogico(str);
+    }
+
+    private boolean esOperadorAritmetico(String str) {
+        return str.equals("+") || str.equals("-") || str.equals("*") || str.equals("/");
+    }
+
+    private boolean esOperadorComparacion(String str) {
+        return str.equals("<") || str.equals(">") ||
+                str.equals("<=") || str.equals(">=") ||
+                str.equals("==") || str.equals("!=");
+    }
+
+    private boolean esOperadorLogico(String str) {
+        return str.equals("&&") || str.equals("||");
+    }
+
+    private boolean aplicarComparacion(float a, float b, String operador) {
+        switch (operador) {
+            case "<":  return a < b;
+            case ">":  return a > b;
+            case "<=": return a <= b;
+            case ">=": return a >= b;
+            case "==": return a == b;
+            case "!=": return a != b;
+            default: return false;
+        }
+    }
+
+    private boolean aplicarOperadorLogico(boolean a, boolean b, String operador) {
+        switch (operador) {
+            case "&&": return a && b;
+            case "||": return a || b;
+            default: return false;
+        }
+    }
+
+    private int precedencia(String op) {
+        switch (op) {
+            case "||":
+                return 1;
+            case "&&":
+                return 2;
+            case "==":
+            case "!=":
+                return 3;
+            case "<":
+            case ">":
+            case "<=":
+            case ">=":
+                return 4;
+            case "+":
+            case "-":
+                return 5;
+            case "*":
+            case "/":
+                return 6;
+            default:
+                return 0;
+        }
+    }
+
+    private float aplicarOperacion(float a, float b, String operador) {
+        switch (operador) {
+            case "+": return a + b;
+            case "-": return a - b;
+            case "*": return a * b;
+            case "/": return b != 0 ? a / b : 0;
+            default: return 0;
+        }
     }
 
     // =============================================================================
@@ -178,7 +672,7 @@ public class Parser {
     }
 
     // =============================================================================
-    // CARGA DE TABLA TAS (sin cambios)
+    // CARGA DE TABLA TAS
     // =============================================================================
 
     public void cargarTAS(String archivo) throws IOException {
@@ -349,11 +843,10 @@ public class Parser {
         this.tokens = tokensEntrada;
         this.currentTokenIndex = 0;
 
-        // Limpiar estado
         tablaSimbolos.clear();
         erroresSemanticos.clear();
         warnings.clear();
-        erroresReportados.clear();  // Limpiar errores reportados
+        erroresReportados.clear();
         resetearContexto();
 
         pila.clear();
@@ -429,12 +922,24 @@ public class Parser {
         acabaDeVerInvoco = false;
         objetoInvocando = "";
         dentroDeConstructor = false;
-        acumulador = 0;
-        expresionTieneReales = false;
-        operadorActual = "+";
         dentroDeExpresion = false;
+        expresionTokens.clear();
+        tipoExpresionActual = "";
         varAsignando = null;
         nombreVarAsignando = "";
+        tamanoArregloDeclarado = -1;
+        elementosArreglo.clear();
+        dentroDeInicializacionArreglo = false;
+        tipoArregloActual = "";
+        tipoSwitch = "";
+        valoresCaseVistos.clear();
+        lineaPrimerCase = -1;
+        dentroDeSwitch = false;
+        tipoSwitch = "";
+        valoresCaseVistos.clear();
+        lineaSwitch = -1;
+        capturandoExpresionSwitch = false;
+        tokensExpresionSwitch.clear();
     }
 
     // =============================================================================
@@ -442,12 +947,11 @@ public class Parser {
     // =============================================================================
 
     private void procesarDerivacion(String noTerminal, String produccion) {
-        // Detectar función (favor) o método (metodillo)
         if ((produccion.contains("favor") && !produccion.contains("porfavor")) || produccion.contains("metodillo")) {
             parametrosActuales.clear();
             tipoRetornoActual = "";
             funcionTieneRetorno = false;
-            esperandoTipoRetorno = true;  // Activar INMEDIATAMENTE
+            esperandoTipoRetorno = true;
         }
 
         if (produccion.contains("constantito")) {
@@ -460,6 +964,13 @@ public class Parser {
 
         if (produccion.contains("enCasoSea")) {
             dentroDeSwitch = true;
+        }
+
+        if (produccion.contains("enCasoSea")) {
+            dentroDeSwitch = true;
+            tipoSwitch = "";
+            valoresCaseVistos.clear();
+            lineaPrimerCase = -1;
         }
 
         if (noTerminal.equals("CONSTRUCTOR") && produccion.contains("BLOQUE_CONSTRUCTOR")) {
@@ -480,112 +991,135 @@ public class Parser {
             }
         }
 
-        // 2. CLASESITA
-        if (terminal.equals("clasesita")) {
-            // Siguiente ID será nombre de clase
-        }
-
-        // 3. ACLAMA
+        // 2. ACLAMA
         if (terminal.equals("aclama")) {
             acabaDeVerAclama = true;
         }
 
-        // 3b. INVOCO
+        // 3. INVOCO
         if (terminal.equals("invoco")) {
             acabaDeVerInvoco = true;
         }
 
-        // 4. PUNTO después de aclama o invoco
+        // 4. PUNTO
         if (terminal.equals(".")) {
             if (acabaDeVerAclama) {
                 vieneDeAclama = true;
                 acabaDeVerAclama = false;
             }
-            // Para invoco, el punto confirma que es llamada a método de objeto
-            // acabaDeVerInvoco se maneja en procesarIdentificador
         }
 
-        // 5. LITERALES Y OPERADORES (Acumulador)
+        // 5. COLECTAR TOKENS DE EXPRESIÓN
         if (dentroDeExpresion) {
             if (terminal.equals("entero") && token.type == TokenType.ENTERO) {
-                tipoExpresionActual = "enterito";
-                int valor = (Integer) token.literal;
-                acumulador = aplicarOperacion(acumulador, valor, operadorActual);
-                operadorActual = "+";
+                expresionTokens.add(token.literal);
             } else if (terminal.equals("decimal") && token.type == TokenType.REAL) {
-                tipoExpresionActual = "realito";
-                expresionTieneReales = true;
-                float valor = ((Number) token.literal).floatValue();
-                acumulador = aplicarOperacion(acumulador, valor, operadorActual);
-                operadorActual = "+";
-            } else if (terminal.equals("cadena") && token.type == TokenType.STRING) {
-                tipoExpresionActual = "cadenita";
-                // No acumular, solo marcar el tipo
-            } else if (terminal.equals("char") && token.type == TokenType.CHAR) {
-                tipoExpresionActual = "charsito";
-                // No acumular, solo marcar el tipo
-            } else if ((terminal.equals("TRUE") || terminal.equals("FALSE")) && token.type == TokenType.BOOLEAN) {
-                tipoExpresionActual = "booleanito";
-                // No acumular, solo marcar el tipo
-            } else if (terminal.equals("+")) {
-                operadorActual = "+";
-            } else if (terminal.equals("-")) {
-                operadorActual = "-";
-            } else if (terminal.equals("*")) {
-                operadorActual = "*";
-            } else if (terminal.equals("/")) {
-                operadorActual = "/";
+                expresionTokens.add(((Number) token.literal).floatValue());
+            }
+            // ========== AGREGAR ESTOS CASOS ==========
+            else if (terminal.equals("TRUE") && token.type == TokenType.BOOLEAN) {
+                boolean valorBool = token.lexeme.equals("true");
+                expresionTokens.add("BOOL:" + valorBool);
+            }
+            else if (terminal.equals("cadena") && token.type == TokenType.STRING) {
+                expresionTokens.add("STR:" + token.literal);
+            }
+            else if (terminal.equals("char") && token.type == TokenType.CHAR) {
+                expresionTokens.add("CHAR:" + token.literal);
+            }
+            // ==========================================
+            else if (terminal.equals("id")) {
+                if (!token.lexeme.equals(nombreVarAsignando)) {
+                    expresionTokens.add(token.lexeme);
+                }
+            } else if (terminal.equals("+") || terminal.equals("-") ||
+                    terminal.equals("*") || terminal.equals("/")) {
+                expresionTokens.add(terminal);
+            } else if (terminal.equals("(")) {
+                expresionTokens.add("(");
+            } else if (terminal.equals(")")) {
+                expresionTokens.add(")");
+            }
+            // Operadores de comparación
+            else if (terminal.equals("<") || terminal.equals(">") ||
+                    terminal.equals("<=") || terminal.equals(">=") ||
+                    terminal.equals("==") || terminal.equals("!=")) {
+                expresionTokens.add(terminal);
+            }
+            // Operadores lógicos
+            else if (terminal.equals("&&") || terminal.equals("||")) {
+                expresionTokens.add(terminal);
             }
         }
 
         // 6. IDENTIFICADORES
         if (terminal.equals("id")) {
             procesarIdentificador(token);
+        }
 
-            // Si estamos en expresión y es uso de variable, acumular
-            if (dentroDeExpresion && !vieneDeAclama && tipoActual.isEmpty()) {
-                String scope = obtenerScopeActual();
-                IdentificadorInfo var = buscarIdentificador(scope + "." + token.lexeme);
-                if (var == null) var = buscarIdentificador("global." + token.lexeme);
-                if (var != null && var.valor != null) {
-                    // Detectar tipo de la variable
-                    if (tipoExpresionActual.isEmpty()) {
-                        tipoExpresionActual = var.tipo;
-                    }
+        // 6b. MANEJO DE ARREGLOS - Capturar tamaño y elementos
+        if (terminal.equals("[")) {
+            // Mirar si el siguiente token es un entero (tamaño del arreglo)
+            if (currentTokenIndex + 1 < tokens.size()) {
+                Token siguienteToken = tokens.get(currentTokenIndex + 1);
+                if (siguienteToken.type == TokenType.ENTERO) {
+                    tamanoArregloDeclarado = (Integer) siguienteToken.literal;
+                    tipoArregloActual = tipoActual; // Guardar el tipo del arreglo
 
-                    // Solo intentar acumular si es numérico
-                    if (var.valor instanceof Number) {
-                        if (var.tipo.equals("realito")) expresionTieneReales = true;
-                        float valor = ((Number) var.valor).floatValue();
-                        acumulador = aplicarOperacion(acumulador, valor, operadorActual);
-                        operadorActual = "+";
+                    // Validar tamaño >= 0
+                    if (tamanoArregloDeclarado < 0) {
+                        agregarError("Tamaño de arreglo no puede ser negativo: " + tamanoArregloDeclarado + " (línea " + token.line + ")");
                     }
                 }
             }
         }
 
+        // Detectar inicio de inicialización de arreglo (después de =)
+        if (terminal.equals("=") && tamanoArregloDeclarado >= 0) {
+            // El siguiente debe ser {
+            if (currentTokenIndex + 1 < tokens.size()) {
+                Token siguienteToken = tokens.get(currentTokenIndex + 1);
+                if (siguienteToken.type == TokenType.LLAVE_IZQ) {
+                    dentroDeInicializacionArreglo = true;
+                    elementosArreglo.clear();
+                }
+            }
+        }
+
+        // Capturar elementos del arreglo
+        if (dentroDeInicializacionArreglo) {
+            if (terminal.equals("entero") && token.type == TokenType.ENTERO) {
+                elementosArreglo.add("enterito");
+            } else if (terminal.equals("decimal") && token.type == TokenType.REAL) {
+                elementosArreglo.add("realito");
+            } else if (terminal.equals("cadena") && token.type == TokenType.STRING) {
+                elementosArreglo.add("cadenita");
+            } else if (terminal.equals("char") && token.type == TokenType.CHAR) {
+                elementosArreglo.add("charsito");
+            } else if ((terminal.equals("TRUE") || terminal.equals("FALSE")) && token.type == TokenType.BOOLEAN) {
+                elementosArreglo.add("booleanito");
+            }
+        }
+
         // 7. ENTRADA A BLOQUE
         if (terminal.equals("{")) {
-            nivelBloque++; // Incrementar nivel de bloque global
+            nivelBloque++;
 
-            // Si ya hay una función activa O estamos en constructor, marcar nivel
             if (!funcionActual.isEmpty() || dentroDeConstructor) {
                 dentroDeFuncion = true;
-                nivelBloqueFuncion++; // Incrementar nivel dentro de función/constructor
+                nivelBloqueFuncion++;
 
-                // Si estamos en una clase y hay función activa, es un método
                 if (!claseActual.isEmpty() && !funcionActual.isEmpty()) {
                     dentroDeMetodo = true;
                 }
             }
 
-            // Detectar entrada a principalsito
             if (funcionActual.isEmpty() && claseActual.isEmpty()) {
                 for (int i = currentTokenIndex - 1; i >= Math.max(0, currentTokenIndex - 5); i--) {
                     if (tokens.get(i).type == TokenType.PRINCIPALSITO) {
                         funcionActual = "principalsito";
                         dentroDeFuncion = true;
-                        nivelBloqueFuncion = 1; // Iniciar nivel
+                        nivelBloqueFuncion = 1;
                         tipoRetornoActual = "vacio";
                         break;
                     }
@@ -594,15 +1128,23 @@ public class Parser {
         }
 
         // 8. FIN DE DECLARACIÓN (:))
+        // 8. FIN DE DECLARACIÓN (:))
         if (terminal.equals(":)")) {
-            // Si estamos dentro de un método, NO registrar nada
+            // Validar arreglo si estábamos en inicialización
+            if (dentroDeInicializacionArreglo) {
+                validarArregloConstantito(token.line);
+                dentroDeInicializacionArreglo = false;
+                tamanoArregloDeclarado = -1;
+                elementosArreglo.clear();
+                tipoArregloActual = "";
+            }
+
             if (!dentroDeMetodo && !idPendiente.isEmpty() && !tipoActual.isEmpty()) {
                 procesarFinDeclaracion(token);
             }
 
-            // Si estábamos en expresión, ejecutar asignación
             if (dentroDeExpresion && varAsignando != null) {
-                ejecutarAsignacionConAcumulador(token.line);
+                ejecutarAsignacionConExpresion(token.line);
                 dentroDeExpresion = false;
             }
         }
@@ -610,6 +1152,49 @@ public class Parser {
         // 9. ASIGNACIÓN (porfavor)
         if (terminal.equals("porfavor")) {
             prepararAsignacion(token);
+        }
+
+        // 9b. VALIDACIÓN DE CONDICIONES BOOLEANAS EN ESTRUCTURAS DE CONTROL
+        if (terminal.equals("siCumple") || terminal.equals("peroSiCumple") ||
+                terminal.equals("SiPersiste") || terminal.equals("siControla")) {
+
+            String contexto = terminal;
+
+            // El siguiente token debe ser (
+            if (currentTokenIndex + 1 < tokens.size() &&
+                    tokens.get(currentTokenIndex + 1).type == TokenType.PAREN_IZQ) {
+
+                // Capturar tokens de la condición
+                List<Token> condicionTokens = new ArrayList<>();
+                int parenCount = 0;
+                int startIdx = currentTokenIndex + 1; // Empezar desde el (
+
+                for (int i = startIdx; i < tokens.size(); i++) {
+                    Token t = tokens.get(i);
+
+                    if (t.type == TokenType.PAREN_IZQ) {
+                        parenCount++;
+                        if (parenCount > 1) { // No incluir el primer (
+                            condicionTokens.add(t);
+                        }
+                    } else if (t.type == TokenType.PAREN_DER) {
+                        parenCount--;
+                        if (parenCount == 0) {
+                            // Encontramos el cierre, validar ahora
+                            break;
+                        } else {
+                            condicionTokens.add(t);
+                        }
+                    } else {
+                        condicionTokens.add(t);
+                    }
+                }
+
+                // Validar la condición
+                if (!condicionTokens.isEmpty()) {
+                    validarCondicionBooleana(condicionTokens, token.line, contexto);
+                }
+            }
         }
 
         // 10. CONTROL DE FLUJO
@@ -640,35 +1225,287 @@ public class Parser {
             }
         }
 
+        // 11b cases
+        if (terminal.equals("enCasoSea")) {
+            dentroDeSwitch = true;
+            tipoSwitch = "";
+            valoresCaseVistos.clear();
+            lineaSwitch = token.line;
+            capturandoExpresionSwitch = false;
+            tokensExpresionSwitch.clear();
+        }
+
+        // Detectar inicio de expresión (paréntesis después de enCasoSea)
+        if (dentroDeSwitch && tipoSwitch.isEmpty() && terminal.equals("(")) {
+            capturandoExpresionSwitch = true;
+            tokensExpresionSwitch.clear();
+        }
+
+        // Capturar tokens de la expresión del switch
+        if (capturandoExpresionSwitch && !terminal.equals("(")) {
+            if (terminal.equals(")")) {
+                // Terminamos de capturar, evaluar tipo
+                capturandoExpresionSwitch = false;
+                evaluarTipoExpresionSwitch(token.line);
+            } else {
+                // Agregar token a la expresión
+                tokensExpresionSwitch.add(token);
+            }
+        }
+
+        // ========== NUEVA VALIDACIÓN DE CASES ==========
+        // Validar cuando encontramos DOS_PUNTOS después de un literal dentro del switch
+        if (terminal.equals(":") && dentroDeSwitch && !tipoSwitch.isEmpty()) {
+            // Mirar el token ANTERIOR (el valor del case)
+            if (currentTokenIndex > 0) {
+                Token tokenAnterior = tokens.get(currentTokenIndex - 1);
+
+                // Verificar que NO es oSino (caso default)
+                if (tokenAnterior.type != TokenType.OSINO) {
+                    // Es un case con valor, validarlo
+                    validarCaseConToken(tokenAnterior);
+                }
+            }
+        }
+
         // 12. FIN DE BLOQUES (})
         if (terminal.equals("}")) {
             procesarCierreBloque();
+
+            if (dentroDeSwitch && nivelBloque <= 0) {
+                dentroDeSwitch = false;
+                tipoSwitch = "";
+                valoresCaseVistos.clear();
+                lineaSwitch = -1;
+                tokensExpresionSwitch.clear();
+            }
         }
+    }
+
+    private void validarCaseConToken(Token tokenValor) {
+        String tipoActualCase = "";
+        Object valorActualCase = null;
+
+        // Determinar tipo y valor del case según el token
+        switch (tokenValor.type) {
+            case ENTERO:
+                tipoActualCase = "enterito";
+                valorActualCase = tokenValor.literal;
+                break;
+            case REAL:
+                tipoActualCase = "realito";
+                valorActualCase = tokenValor.literal;
+                break;
+            case STRING:
+                tipoActualCase = "cadenita";
+                valorActualCase = tokenValor.literal;
+                break;
+            case CHAR:
+                tipoActualCase = "charsito";
+                valorActualCase = tokenValor.literal;
+                break;
+            case BOOLEAN:
+                tipoActualCase = "booleanito";
+                valorActualCase = tokenValor.lexeme.equals("true");
+                break;
+            case IDENTIFICADOR:
+            case IDENTIFICADOR_MAYUSCULA:
+                // Es una variable/constante, buscar su valor
+                String nombreVar = tokenValor.lexeme;
+                String scope = obtenerScopeActual();
+
+                IdentificadorInfo varInfo = buscarIdentificador(scope + "." + nombreVar);
+                if (varInfo == null) varInfo = buscarIdentificador("global." + nombreVar);
+
+                if (varInfo == null) {
+                    agregarError("Variable '" + nombreVar + "' no declarada en case (línea " + tokenValor.line + ")");
+                    return;
+                }
+
+                tipoActualCase = varInfo.tipo;
+                valorActualCase = varInfo.valor;
+                break;
+            default:
+                // No es un literal válido para case
+                return;
+        }
+
+        // Validar que el tipo coincida con la expresión del switch
+        if (!tipoActualCase.equals(tipoSwitch)) {
+            agregarError("Tipo incompatible en case: el switch evalúa tipo " +
+                    tipoSwitch.toUpperCase() + " (línea " + lineaSwitch +
+                    ") pero el case es de tipo " + tipoActualCase.toUpperCase() +
+                    " (línea " + tokenValor.line + ")");
+            return;
+        }
+
+        // Validar que el valor no se repita
+        if (valoresCaseVistos.contains(valorActualCase)) {
+            agregarError("Valor duplicado en case: " + valorActualCase +
+                    " ya fue usado en este switch (línea " + tokenValor.line + ")");
+            return;
+        }
+
+        // Si todo está bien, agregar el valor
+        valoresCaseVistos.add(valorActualCase);
+        imprimirAccionSemantica("Case válido: " + valorActualCase + " de tipo " +
+                tipoActualCase.toUpperCase() + " (línea " + tokenValor.line + ")");
+    }
+
+    private void evaluarTipoExpresionSwitch(int linea) {
+        if (tokensExpresionSwitch.isEmpty()) {
+            agregarError("Switch sin expresión (línea " + linea + ")");
+            return;
+        }
+
+        // Caso simple: una sola variable o literal
+        if (tokensExpresionSwitch.size() == 1) {
+            Token token = tokensExpresionSwitch.get(0);
+
+            // Es un literal directo
+            if (token.type == TokenType.ENTERO) {
+                tipoSwitch = "enterito";
+            } else if (token.type == TokenType.REAL) {
+                tipoSwitch = "realito";
+            } else if (token.type == TokenType.STRING) {
+                tipoSwitch = "cadenita";
+            } else if (token.type == TokenType.CHAR) {
+                tipoSwitch = "charsito";
+            } else if (token.type == TokenType.BOOLEAN) {
+                tipoSwitch = "booleanito";
+            }
+            // Es un identificador (variable)
+            else if (token.type == TokenType.IDENTIFICADOR ||
+                    token.type == TokenType.IDENTIFICADOR_MAYUSCULA) {
+                String nombreVar = token.lexeme;
+                String scope = obtenerScopeActual();
+
+                IdentificadorInfo varInfo = buscarIdentificador(scope + "." + nombreVar);
+                if (varInfo == null) varInfo = buscarIdentificador("global." + nombreVar);
+
+                if (varInfo == null) {
+                    agregarError("Variable '" + nombreVar + "' no declarada en switch (línea " + linea + ")");
+                    tipoSwitch = "enterito"; // Tipo por defecto para continuar
+                } else {
+                    tipoSwitch = varInfo.tipo;
+                }
+            } else {
+                agregarError("Expresión inválida en switch (línea " + linea + ")");
+                tipoSwitch = "enterito";
+            }
+        }
+        // Caso complejo: expresión con operadores
+        else {
+            // Convertir tokens a formato para evaluarExpresion()
+            List<Object> expresionTokens = new ArrayList<>();
+
+            for (Token t : tokensExpresionSwitch) {
+                if (t.type == TokenType.ENTERO) {
+                    expresionTokens.add(t.literal);
+                } else if (t.type == TokenType.REAL) {
+                    expresionTokens.add(((Number) t.literal).floatValue());
+                } else if (t.type == TokenType.BOOLEAN) {
+                    expresionTokens.add("BOOL:" + t.lexeme.equals("true"));
+                } else if (t.type == TokenType.STRING) {
+                    expresionTokens.add("STR:" + t.lexeme);
+                } else if (t.type == TokenType.CHAR) {
+                    expresionTokens.add("CHAR:" + t.literal);
+                } else if (t.type == TokenType.IDENTIFICADOR ||
+                        t.type == TokenType.IDENTIFICADOR_MAYUSCULA) {
+                    expresionTokens.add(t.lexeme);
+                } else if (t.type == TokenType.SUMA) {
+                    expresionTokens.add("+");
+                } else if (t.type == TokenType.MENOS) {
+                    expresionTokens.add("-");
+                } else if (t.type == TokenType.ASTERISCO) {
+                    expresionTokens.add("*");
+                } else if (t.type == TokenType.DIVISION) {
+                    expresionTokens.add("/");
+                } else if (t.type == TokenType.PAREN_IZQ) {
+                    expresionTokens.add("(");
+                } else if (t.type == TokenType.PAREN_DER) {
+                    expresionTokens.add(")");
+                }
+            }
+
+            // Evaluar la expresión para obtener su tipo
+            ExpresionResult resultado = evaluarExpresion(expresionTokens, linea);
+            tipoSwitch = resultado.tipo;
+        }
+
+        imprimirAccionSemantica("Switch evaluado: expresión de tipo " + tipoSwitch.toUpperCase() +
+                " (línea " + lineaSwitch + ")");
+    }
+
+    private void validarCase(String terminal, Token token) {
+        String tipoActualCase = "";
+        Object valorActualCase = null;
+
+        // Determinar tipo y valor del case actual
+        switch (terminal) {
+            case "entero":
+                tipoActualCase = "enterito";
+                valorActualCase = token.literal;
+                break;
+            case "decimal":
+                tipoActualCase = "realito";
+                valorActualCase = token.literal;
+                break;
+            case "cadena":
+                tipoActualCase = "cadenita";
+                valorActualCase = token.literal;
+                break;
+            case "char":
+                tipoActualCase = "charsito";
+                valorActualCase = token.literal;
+                break;
+            case "TRUE":
+                tipoActualCase = "booleanito";
+                valorActualCase = token.lexeme.equals("true");
+                break;
+        }
+
+        // Validar que el tipo coincida con la expresión del switch
+        if (!tipoActualCase.equals(tipoSwitch)) {
+            agregarError("Tipo incompatible en case: el switch evalúa tipo " +
+                    tipoSwitch.toUpperCase() + " (línea " + lineaSwitch +
+                    ") pero el case es de tipo " + tipoActualCase.toUpperCase() +
+                    " (línea " + token.line + ")");
+            return;
+        }
+
+        // Validar que el valor no se repita
+        if (valoresCaseVistos.contains(valorActualCase)) {
+            agregarError("Valor duplicado en case: " + valorActualCase +
+                    " ya fue usado en este switch (línea " + token.line + ")");
+            return;
+        }
+
+        // Si todo está bien, agregar el valor
+        valoresCaseVistos.add(valorActualCase);
+        imprimirAccionSemantica("Case válido: " + valorActualCase + " de tipo " +
+                tipoActualCase.toUpperCase() + " (línea " + token.line + ")");
     }
 
     private void procesarIdentificador(Token token) {
         String nombre = token.lexeme;
 
-        // CONTEXTO 1: Nombre de clase (después de clasesita)
         if (tipoActual.equals("clasesita")) {
             registrarClase(nombre, token.line);
             tipoActual = "";
             return;
         }
 
-        // CONTEXTO 2: Nombre de constructor
         if (!claseActual.isEmpty() && nombre.equals(claseActual) && !dentroDeConstructor) {
             dentroDeConstructor = true;
             return;
         }
 
-        // CONTEXTO 3: Tipo de clase para instanciar
         if (esClase(nombre) && tipoActual.isEmpty() && idPendiente.isEmpty()) {
             tipoActual = nombre;
             return;
         }
 
-        // CONTEXTO 4: Llamada a función con aclama
         if (vieneDeAclama) {
             if (!existeFuncion(nombre)) {
                 agregarError("Función '" + nombre + "' no declarada (línea " + token.line + ")");
@@ -677,26 +1514,19 @@ public class Parser {
             return;
         }
 
-        // CONTEXTO 4b: Llamada a método con invoco objeto.metodo()
         if (acabaDeVerInvoco && objetoInvocando.isEmpty()) {
-            // Este es el nombre del objeto (ej: persona1)
             verificarIdentificadorDeclarado(nombre, token.line);
             objetoInvocando = nombre;
             return;
         }
 
-        // CONTEXTO 4c: Nombre del método después de invoco objeto.
         if (!objetoInvocando.isEmpty()) {
-            // Verificar que el objeto es de tipo clase
             String scope = obtenerScopeActual();
             IdentificadorInfo objInfo = buscarIdentificador(scope + "." + objetoInvocando);
             if (objInfo == null) objInfo = buscarIdentificador("global." + objetoInvocando);
 
             if (objInfo != null && objInfo.modificador.equals("objeto")) {
-                // Obtener la clase del objeto
                 String tipoClase = objInfo.tipo;
-
-                // Verificar que el método existe en esa clase
                 String metodoKey = "clase_" + tipoClase + "." + nombre;
                 IdentificadorInfo metodoInfo = buscarIdentificador(metodoKey);
 
@@ -705,39 +1535,33 @@ public class Parser {
                 }
             }
 
-            // Limpiar contexto de invoco
             acabaDeVerInvoco = false;
             objetoInvocando = "";
             return;
         }
 
-        // CONTEXTO 5: Nombre de función
         if (!tipoRetornoActual.isEmpty() && funcionActual.isEmpty() && claseActual.isEmpty()) {
             registrarFuncion(nombre, token.line);
             return;
         }
 
-        // CONTEXTO 6: Nombre de método
         if (!tipoRetornoActual.isEmpty() && !claseActual.isEmpty() && funcionActual.isEmpty()) {
             funcionActual = nombre;
-            tipoActual = ""; // Limpiar para evitar que se registre como parámetro
-            idPendiente = ""; // Limpiar para evitar que se registre como variable
+            tipoActual = "";
+            idPendiente = "";
             return;
         }
 
-        // CONTEXTO 7: Parámetro
         if ((!funcionActual.isEmpty() || dentroDeConstructor) && !tipoActual.isEmpty() && !dentroDeFuncion) {
             registrarParametro(nombre, token.line);
             return;
         }
 
-        // CONTEXTO 8: Declarando variable
         if (!tipoActual.isEmpty() && idPendiente.isEmpty()) {
             idPendiente = nombre;
             return;
         }
 
-        // CONTEXTO 9: Usando variable
         if (tipoActual.isEmpty() && idPendiente.isEmpty()) {
             verificarIdentificadorDeclarado(nombre, token.line);
             return;
@@ -767,13 +1591,10 @@ public class Parser {
             return;
         }
 
-        // Registrar función inmediatamente
         IdentificadorInfo info = new IdentificadorInfo(nombre, tipoRetornoActual, null, "favor", linea, "global");
         tablaSimbolos.put(key, info);
 
         funcionActual = nombre;
-
-        // CRÍTICO: Limpiar residuos
         idPendiente = "";
         tipoActual = "";
 
@@ -793,7 +1614,6 @@ public class Parser {
 
         IdentificadorInfo info = new IdentificadorInfo(funcionActual, tipoRetornoActual, null, "metodillo", token.line, scope);
 
-        // Agregar parámetros
         for (ParametroInfo param : parametrosActuales) {
             info.tiposParametros.add(param.tipo);
             info.nombresParametros.add(param.nombre);
@@ -878,107 +1698,115 @@ public class Parser {
 
             varAsignando = var;
             nombreVarAsignando = varNombre;
-            acumulador = 0;
-            expresionTieneReales = false;
-            tipoExpresionActual = "";  // Limpiar tipo de expresión
-            operadorActual = "+";
+            expresionTokens.clear();
+            tipoExpresionActual = "";
             dentroDeExpresion = true;
         }
     }
 
-    private void ejecutarAsignacionConAcumulador(int linea) {
-        if (varAsignando == null) return;
+    private void ejecutarAsignacionConExpresion(int linea) {
+        if (varAsignando == null || expresionTokens.isEmpty()) return;
+
+        // Evaluar expresión con precedencia correcta
+        ExpresionResult resultado = evaluarExpresion(expresionTokens, linea);
 
         // VALIDACIÓN DE COMPATIBILIDAD DE TIPOS
         String tipoVariable = varAsignando.tipo;
-        String tipoExpresion = tipoExpresionActual.isEmpty() ?
-                (expresionTieneReales ? "realito" : "enterito") :
-                tipoExpresionActual;
+        String tipoExpresion = resultado.tipo;
 
         boolean hayError = false;
 
-        // ===== VALIDACIONES POR TIPO DE VARIABLE =====
+        // ========================================
+        // PRIORIDAD 1: Validar expresiones booleanas
+        // ========================================
 
-        if (tipoVariable.equals("enterito")) {
-            // enterito solo acepta enterito
-            if (tipoExpresion.equals("realito")) {
-                agregarError("No se puede asignar REALITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("cadenita")) {
-                agregarError("No se puede asignar CADENITA a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("charsito")) {
-                agregarError("No se puede asignar CHARSITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("booleanito")) {
-                agregarError("No se puede asignar BOOLEANITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            }
-        } else if (tipoVariable.equals("realito")) {
-            // realito acepta enterito (con warning) y realito
-            if (tipoExpresion.equals("cadenita")) {
-                agregarError("No se puede asignar CADENITA a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("charsito")) {
-                agregarError("No se puede asignar CHARSITO a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("booleanito")) {
-                agregarError("No se puede asignar BOOLEANITO a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("enterito")) {
-                // Conversión permitida con warning
-                agregarWarning("Conversión implícita: ENTERITO → REALITO en '" + nombreVarAsignando + "'");
-            }
-        } else if (tipoVariable.equals("cadenita")) {
-            // cadenita acepta cadenita y charsito
-            if (tipoExpresion.equals("enterito")) {
-                agregarError("No se puede asignar ENTERITO a variable CADENITA '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("realito")) {
-                agregarError("No se puede asignar REALITO a variable CADENITA '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("booleanito")) {
-                agregarError("No se puede asignar BOOLEANITO a variable CADENITA '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            }
-            // charsito → cadenita es OK (sin warning)
-        } else if (tipoVariable.equals("charsito")) {
-            // charsito acepta charsito y cadenita (toma primer carácter)
-            if (tipoExpresion.equals("enterito")) {
-                agregarError("No se puede asignar ENTERITO a variable CHARSITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("realito")) {
-                agregarError("No se puede asignar REALITO a variable CHARSITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            } else if (tipoExpresion.equals("booleanito")) {
-                agregarError("No se puede asignar BOOLEANITO a variable CHARSITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
-            }
-            // cadenita → charsito es OK (toma primer carácter, sin warning)
-        } else if (tipoVariable.equals("booleanito")) {
-            // booleanito solo acepta booleanito
-            if (!tipoExpresion.equals("booleanito")) {
-                agregarError("No se puede asignar " + tipoExpresion.toUpperCase() + " a variable BOOLEANITO '" + nombreVarAsignando + "' (línea " + linea + ")");
-                hayError = true;
+        // Si la expresión es booleana pero la variable NO es booleanito
+        if (resultado.esBooleano && !tipoVariable.equals("booleanito")) {
+            agregarError("No se puede asignar BOOLEANITO a variable " +
+                    tipoVariable.toUpperCase() + " '" + nombreVarAsignando + "' (línea " + linea + ")");
+            hayError = true;
+        }
+
+        // Si la variable es booleanito pero la expresión NO es booleana
+        if (tipoVariable.equals("booleanito") && !resultado.esBooleano) {
+            agregarError("No se puede asignar " + tipoExpresion.toUpperCase() +
+                    " a variable BOOLEANITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+            hayError = true;
+        }
+
+        // ========================================
+        // PRIORIDAD 2: Validar otros tipos (solo si no es booleano)
+        // ========================================
+
+        if (!resultado.esBooleano && !hayError) {
+            if (tipoVariable.equals("enterito")) {
+                if (tipoExpresion.equals("realito")) {
+                    agregarError("No se puede asignar REALITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    hayError = true;
+                } else if (tipoExpresion.equals("cadenita")) {
+                    agregarError("No se puede asignar CADENITA a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    hayError = true;
+                } else if (tipoExpresion.equals("charsito")) {
+                    agregarError("No se puede asignar CHARSITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    hayError = true;
+                }
+            } else if (tipoVariable.equals("realito")) {
+                if (tipoExpresion.equals("cadenita")) {
+                    agregarError("No se puede asignar CADENITA a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    hayError = true;
+                } else if (tipoExpresion.equals("charsito")) {
+                    agregarError("No se puede asignar CHARSITO a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    hayError = true;
+                } else if (tipoExpresion.equals("enterito")) {
+                    agregarWarning("Conversión implícita: ENTERITO → REALITO en '" + nombreVarAsignando + "'");
+                }
+            } else if (tipoVariable.equals("cadenita")) {
+                // ========== NUEVA REGLA: CHARSITO → CADENITA ES VÁLIDO ==========
+                if (tipoExpresion.equals("charsito")) {
+                    // Permitir conversión implícita de char a string
+                    agregarWarning("Conversión implícita: CHARSITO → CADENITA en '" + nombreVarAsignando + "'");
+                } else if (!tipoExpresion.equals("cadenita")) {
+                    agregarError("No se puede asignar " + tipoExpresion.toUpperCase() +
+                            " a variable CADENITA '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    hayError = true;
+                }
+                // ================================================================
+            } else if (tipoVariable.equals("charsito")) {
+                if (!tipoExpresion.equals("charsito")) {
+                    agregarError("No se puede asignar " + tipoExpresion.toUpperCase() +
+                            " a variable CHARSITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    hayError = true;
+                }
             }
         }
 
-        // Si hay error, limpiar y salir SIN asignar
         if (hayError) {
             limpiarAsignacion();
             return;
         }
 
-        // Asignar valor (solo si es numérico)
-        if ((tipoVariable.equals("enterito") || tipoVariable.equals("realito")) &&
-                (tipoExpresion.equals("enterito") || tipoExpresion.equals("realito"))) {
-            if (tipoVariable.equals("enterito")) {
-                varAsignando.valor = (int) acumulador;
-                imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = " + (int) acumulador);
-            } else {
-                varAsignando.valor = acumulador;
-                imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = " + acumulador);
-            }
+        // ========================================
+        // Asignar valor según el tipo
+        // ========================================
+
+        if (resultado.esBooleano) {
+            // Es una expresión booleana
+            varAsignando.valor = resultado.valorBooleano;
+            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = " + resultado.valorBooleano);
+        } else if (tipoVariable.equals("enterito")) {
+            varAsignando.valor = (int) resultado.valor;
+            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = " + (int) resultado.valor);
+        } else if (tipoVariable.equals("realito")) {
+            varAsignando.valor = resultado.valor;
+            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = " + resultado.valor);
+        } else if (tipoVariable.equals("cadenita")) {
+            // Para strings, no intentamos asignar un valor numérico
+            varAsignando.valor = "";  // O mantén el valor por defecto
+            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = (cadenita válida)");
+        } else if (tipoVariable.equals("charsito")) {
+            // Para chars, no intentamos asignar un valor numérico
+            varAsignando.valor = '\0';  // O mantén el valor por defecto
+            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = (charsito válido)");
         }
 
         varAsignando.inicializada = true;
@@ -989,55 +1817,36 @@ public class Parser {
         varAsignando = null;
         nombreVarAsignando = "";
         dentroDeExpresion = false;
-        acumulador = 0;
-        expresionTieneReales = false;
+        expresionTokens.clear();
         tipoExpresionActual = "";
     }
 
-    private float aplicarOperacion(float acumulado, float valor, String operador) {
-        switch (operador) {
-            case "+": return acumulado + valor;
-            case "-": return acumulado - valor;
-            case "*": return acumulado * valor;
-            case "/": return valor != 0 ? acumulado / valor : 0;
-            default: return acumulado + valor;
-        }
-    }
-
     private void procesarCierreBloque() {
-        nivelBloque--; // Decrementar nivel de bloque global
+        nivelBloque--;
 
-        // Si estamos en una función o constructor, decrementar su nivel
         if ((!funcionActual.isEmpty() || dentroDeConstructor) && nivelBloqueFuncion > 0) {
             nivelBloqueFuncion--;
         }
 
-        // Solo validar retorno y limpiar contexto cuando salimos del bloque principal
         if (nivelBloqueFuncion == 0) {
-            // Constructor terminado
             if (dentroDeConstructor) {
                 dentroDeConstructor = false;
-                funcionActual = ""; // Limpiar residuos
+                funcionActual = "";
                 tipoRetornoActual = "";
                 parametrosActuales.clear();
                 dentroDeFuncion = false;
-            }
-            // Función/Método terminado
-            else if (!funcionActual.isEmpty()) {
+            } else if (!funcionActual.isEmpty()) {
                 if (!tipoRetornoActual.equals("vacio") && !funcionTieneRetorno) {
                     agregarError("Función '" + funcionActual + "' debe tener 'retorna'");
                 }
 
-                // Si estamos en una clase, registrar como método
                 if (!claseActual.isEmpty()) {
-                    registrarMetodo(tokens.get(currentTokenIndex - 1)); // Token del '}'
+                    registrarMetodo(tokens.get(currentTokenIndex - 1));
                 } else {
-                    // Actualizar parámetros de la función global
                     if (!funcionActual.equals("principalsito")) {
                         String key = "global." + funcionActual;
                         IdentificadorInfo funcInfo = tablaSimbolos.get(key);
                         if (funcInfo != null) {
-                            // Actualizar parámetros
                             funcInfo.tiposParametros.clear();
                             funcInfo.nombresParametros.clear();
                             for (ParametroInfo param : parametrosActuales) {
@@ -1048,18 +1857,14 @@ public class Parser {
                     }
                 }
 
-                // Limpiar todo el contexto de la función/método
                 funcionActual = "";
                 tipoRetornoActual = "";
                 funcionTieneRetorno = false;
                 parametrosActuales.clear();
                 dentroDeFuncion = false;
-                dentroDeMetodo = false; // Desactivar flag de método
-
-                // Limpiar residuos que pudieran causar registro incorrecto
+                dentroDeMetodo = false;
                 idPendiente = "";
                 tipoActual = "";
-                dentroDeFuncion = false;
             }
         }
 
@@ -1079,6 +1884,51 @@ public class Parser {
     // =============================================================================
     // UTILIDADES
     // =============================================================================
+    private void validarArregloConstantito(int linea) {
+        // 1. Verificar que no se exceda el tamaño declarado
+        if (elementosArreglo.size() > tamanoArregloDeclarado) {
+            agregarError("Arreglo '" + idPendiente + "' declarado con tamaño " + tamanoArregloDeclarado +
+                    " pero se inicializaron " + elementosArreglo.size() + " elementos (línea " + linea + ")");
+            return;
+        }
+
+        // 2. Verificar compatibilidad de tipos de cada elemento
+        for (int i = 0; i < elementosArreglo.size(); i++) {
+            String tipoElemento = elementosArreglo.get(i);
+
+            // Validar compatibilidad según el tipo del arreglo
+            if (tipoArregloActual.equals("enterito")) {
+                if (!tipoElemento.equals("enterito")) {
+                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba ENTERITO pero se encontró " +
+                            tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
+                }
+            } else if (tipoArregloActual.equals("realito")) {
+                // realito puede aceptar enterito (conversión implícita) o realito
+                if (!tipoElemento.equals("realito") && !tipoElemento.equals("enterito")) {
+                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba REALITO pero se encontró " +
+                            tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
+                }
+            } else if (tipoArregloActual.equals("cadenita")) {
+                if (!tipoElemento.equals("cadenita")) {
+                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba CADENITA pero se encontró " +
+                            tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
+                }
+            } else if (tipoArregloActual.equals("charsito")) {
+                if (!tipoElemento.equals("charsito")) {
+                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba CHARSITO pero se encontró " +
+                            tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
+                }
+            } else if (tipoArregloActual.equals("booleanito")) {
+                if (!tipoElemento.equals("booleanito")) {
+                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba BOOLEANITO pero se encontró " +
+                            tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
+                }
+            }
+        }
+
+        imprimirAccionSemantica("Arreglo '" + idPendiente + "' validado: " + elementosArreglo.size() + "/" + tamanoArregloDeclarado +
+                " elementos de tipo " + tipoArregloActual.toUpperCase());
+    }
 
     private boolean esClase(String nombre) {
         return tablaSimbolos.containsKey("global." + nombre) &&
@@ -1147,7 +1997,6 @@ public class Parser {
         StringBuilder sb = new StringBuilder();
         for (int i = currentTokenIndex; i < tokens.size(); i++) {
             sb.append(tokens.get(i).lexeme).append(" ");
-            // Si ya superamos 70 caracteres, truncar
             if (sb.length() > 70) {
                 return sb.substring(0, 67) + "...";
             }
@@ -1178,13 +2027,11 @@ public class Parser {
     }
 
     private String mostrarPila() {
-        // Convertir pila a lista para mostrar correctamente ($ a la izquierda, tope a la derecha)
         List<String> elementos = new ArrayList<>(pila);
         Collections.reverse(elementos);
 
         String pilaStr = String.join(" ", elementos);
 
-        // Si es muy larga (más de 35 caracteres), truncar con ...
         if (pilaStr.length() > 35) {
             pilaStr = pilaStr.substring(0, 32) + "...";
         }
@@ -1193,7 +2040,6 @@ public class Parser {
     }
 
     private void agregarError(String mensaje) {
-        // Crear clave única para evitar duplicados
         String clave = mensaje.toLowerCase().replaceAll("\\s+", " ");
 
         if (!erroresReportados.contains(clave)) {
@@ -1221,7 +2067,6 @@ public class Parser {
         System.out.println(" ".repeat(45) + "TABLA ÚNICA DE IDENTIFICADORES");
         System.out.println("=".repeat(140));
 
-        // TABLA DE IDENTIFICADORES
         System.out.println("\n📋 IDENTIFICADORES DECLARADOS:");
         System.out.println("-".repeat(140));
         System.out.printf("%-20s %-15s %-20s %-15s %-30s%n",
@@ -1231,7 +2076,6 @@ public class Parser {
         if (tablaSimbolos.isEmpty()) {
             System.out.println(" (No se declararon identificadores)");
         } else {
-            // Ordenar por scope y nombre
             List<Map.Entry<String, IdentificadorInfo>> entradas = new ArrayList<>(tablaSimbolos.entrySet());
             entradas.sort((a, b) -> {
                 int scopeCompare = a.getValue().scope.compareTo(b.getValue().scope);
@@ -1251,7 +2095,6 @@ public class Parser {
             }
         }
 
-        // ERRORES
         if (!erroresSemanticos.isEmpty()) {
             System.out.println("\n❌ ERRORES SEMÁNTICOS ENCONTRADOS:");
             System.out.println("-".repeat(140));
@@ -1260,7 +2103,6 @@ public class Parser {
             }
         }
 
-        // WARNINGS
         if (!warnings.isEmpty()) {
             System.out.println("\n⚠️  ADVERTENCIAS:");
             System.out.println("-".repeat(140));
@@ -1269,7 +2111,6 @@ public class Parser {
             }
         }
 
-        // RESUMEN
         System.out.println("\n📊 RESUMEN:");
         System.out.println("-".repeat(140));
 

@@ -1,24 +1,21 @@
 principalsito () {
     podriasCrear enterito edad :)
-    porfavor edad = 25 * 10 :)
-    podriasImprimir("La edad es: " + edad) :)
+    podriasCrear booleanito resultado :)
+
+    porfavor edad = 25 < 10 :)
+    porfavor resultado = 25 < 15 :)
 }
 #
 
 ==========================
 
-favor enterito sumar(enterito a, enterito b) {
-    podriasCrear enterito resultado :)
-    porfavor resultado = a + b :)
+favor enterito sumar(realito b, cadenita c, charsito d, enterito e) {
+    podriasCrear cadenita resultado :)
+    porfavor resultado = b + c + d + e :)
     retorna resultado :)
 } :)
 
 principalsito () {
-    podriasCrear enterito num1 :)
-    podriasCrear enterito num2 :)
-    porfavor num1 = 10 :)
-    porfavor num2 = 20 :)
-    aclama.sumar(num1, num2) :)
 }
 #
 
@@ -28,9 +25,15 @@ principalsito () {
     podriasCrear enterito edad :)
     podriasLeer(edad) :)
 
-    siCumple (edad >= 18) {
+    siCumple (10 >= false) {
         podriasImprimir("Eres mayor de edad") :)
-    } peroSiCumple (edad >= 13) {
+    } peroSiCumple (10.2 >= "aaa") {
+        podriasImprimir("Esres adolescente") :)
+    } peroSiCumple (false >= "aaa") {
+        podriasImprimir("Esres adolescente") :)
+    } peroSiCumple ("false" >= "aaa") {
+        podriasImprimir("Esres adolescente") :)
+    } peroSiCumple (12 >= 10.2) {
         podriasImprimir("Esres adolescente") :)
     } casoContrario {
         podriasImprimir("Eres menor") :)
@@ -40,8 +43,7 @@ principalsito () {
 ==============================
 
 principalsito () {
-    podriasCrear enterito contador :)
-    porfavor contador = 0 :)
+    podriasCrear realito contador :)
 
     SiPersiste (contador < 10) {
         podriasImprimir("Contador: " + contador) :)
@@ -57,17 +59,20 @@ principalsito () {
 ==============================
 
 principalsito () {
-    podriasCrear enterito opcion :)
+    podriasCrear cadenita opcion :)
     porfavor opcion = 2 :)
 
     enCasoSea (opcion) {
-        1 :
+        "2" :
             podriasImprimir("Opcion uno") :)
             parar :)
-        2 :
+        1.17 :
             podriasImprimir("Opcion dos") :)
             parar :)
-        3 :
+        4.2 :
+            podriasImprimir("Opcion tres") :)
+            parar :)
+        '5' :
             podriasImprimir("Opcion tres") :)
             parar :)
         oSino :
@@ -92,21 +97,27 @@ clasesita Persona {
     }
 }
 
+clasesita Humanito {
+    porfavor metodillo vacio hola() {
+    }
+}
+
 principalsito () {
     Persona persona1 = clona Persona("Juan", 25) :)
-    invoco persona1.saludar() :)
+    invoco persona1.hola() :)
 }
 #
 
 ================================
 
 principalsito () {
-    podriasCrear constantito enterito MAX[3] = {100, 200, 300} :)
+    podriasCrear constantito cadenita MAX[3] = {100, "200", true } :)
     podriasCrear enterito numeros[5] :)
 
     porfavor numeros = 0 :)
     podriasImprimir("Primer elemento: " + numeros) :)
 }
+#
 
 =============================
 
@@ -127,10 +138,11 @@ principalsito () {
     podriasCrear realito division :)
     porfavor division = a / b :)
 }
+#
 
 ===========================
 
-favor vacio mostrarDatos(cadenita nombre, enterito edad, realito altura, booleanito bol) {
+favor vacio mostrarDatos(cadenita nombre, realito altura, booleanito bol) {
     porfavor nombre = true :)
     porfavor nombre = "true" :)
     porfavor nombre = 12 :)
@@ -144,13 +156,13 @@ favor vacio mostrarDatos(cadenita nombre, enterito edad, realito altura, boolean
     porfavor altura = 'a' :)
 
     porfavor bol = true :)
-    porfavor bol = "true" :)
+    porfavor bol = "gaa" :)
     porfavor bol = 12 :)
     porfavor bol = 12.20 :)
     porfavor bol = 'a' :)
 
     podriasImprimir("Nombre: " + nombre) :)
-    podriasImprimir("Edad: " + edad) :)
+    podriasImprimir("Edad: " + bol) :)
     podriasImprimir("Altura: " + altura) :)
 
 } :)
@@ -206,5 +218,23 @@ clasesita Persona {
 principalsito () {
     Persona persona1 = clona Persona("Juan", 25) :)
     invoco persona1.saludar() :)
+}
+#
+
+=========================
+
+    podriasCrear cadenita resultado :)
+    porfavor resultado = b + c + d + e :)
+
+principalsito () {
+    podriasCrear cadenita a :)
+    podriasCrear booleanito b :)
+    podriasCrear realito c :)
+    podriasCrear enterito d :)
+    podriasCrear charsito e :)
+    podriasCrear realito resultado :)
+    porfavor c = 10 :)
+    porfavor d = 15 :)
+    porfavor resultado = c + d + a:)
 }
 #
