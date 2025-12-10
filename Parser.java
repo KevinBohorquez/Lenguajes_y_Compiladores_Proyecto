@@ -174,17 +174,6 @@ public class Parser {
         // Convertir tokens a notación postfija (Shunting Yard)
         List<Object> postfix = convertirAPostfija(tokens);
 
-        // Debug: imprimir expresión postfija
-        System.out.print("\n   >>> [DEBUG] Tokens de expresión: ");
-        for (Object t : tokens) {
-            System.out.print(t + " ");
-        }
-        System.out.print("\n   >>> [DEBUG] Postfija: ");
-        for (Object t : postfix) {
-            System.out.print(t + " ");
-        }
-        System.out.println();
-
         // Evaluar expresión postfija (AHORA SÍ PASAMOS lineaActual)
         return evaluarPostfija(postfix, lineaActual);
     }
@@ -193,11 +182,10 @@ public class Parser {
 
     private void validarCondicionBooleana(List<Token> tokenList, int lineNumber, String contexto) {
         if (tokenList == null || tokenList.isEmpty()) {
-            erroresSemanticos.add("❌ ERROR: Condición vacía en " + contexto + " (línea " + lineNumber + ")");
+            erroresSemanticos.add("-> ERROR: Condición vacía en " + contexto + " (línea " + lineNumber + ")");
             return;
         }
 
-        System.out.println("\n   >>> [DEBUG] Validando condición en " + contexto);
 
         // Convertir List<Token> a List<Object> para evaluarExpresion
         List<Object> expresionTokens = new ArrayList<>();
@@ -252,7 +240,7 @@ public class Parser {
         ExpresionResult resultado = evaluarExpresion(expresionTokens, lineNumber);
 
         if (!resultado.tipo.equals("booleanito")) {
-            erroresSemanticos.add("❌ ERROR: La condición en " + contexto +
+            erroresSemanticos.add("-> ERROR: La condición en " + contexto +
                     " no contiene un tipo de dato booleanito (línea " + lineNumber + ")");
         }
     }
@@ -342,7 +330,6 @@ public class Parser {
                 // OPERADORES ARITMÉTICOS
                 if (esOperadorAritmetico(str)) {
                     if (stack.size() < 2) {
-                        System.out.println("\n   >>> [ERROR DEBUG] Pila insuficiente para operador: " + str);
                         continue;
                     }
 
@@ -356,11 +343,11 @@ public class Parser {
                     if (!aEsNumero || !bEsNumero) {
                         // ERROR: Intentando usar operadores aritméticos con tipos no numéricos
                         if (!aEsNumero) {
-                            erroresSemanticos.add("❌ ERROR: No se puede usar el operador aritmético '" + str +
+                            erroresSemanticos.add("-> ERROR: No se puede usar el operador aritmético '" + str +
                                     "' con tipo " + a.tipo.toUpperCase() + " (línea " + lineaActual + ")");
                         }
                         if (!bEsNumero) {
-                            erroresSemanticos.add("❌ ERROR: No se puede usar el operador aritmético '" + str +
+                            erroresSemanticos.add("-> ERROR: No se puede usar el operador aritmético '" + str +
                                     "' con tipo " + b.tipo.toUpperCase() + " (línea " + lineaActual + ")");
                         }
 
@@ -379,13 +366,11 @@ public class Parser {
                     }
 
                     float resultado = aplicarOperacion(a.valor, b.valor, str);
-                    System.out.println("   >>> [DEBUG] " + a.valor + " " + str + " " + b.valor + " = " + resultado);
                     stack.push(new ExpresionResult(resultado, tieneReales, tipoDetectado));
                 }
                 // Operadores de comparación
                 else if (esOperadorComparacion(str)) {
                     if (stack.size() < 2) {
-                        System.out.println("\n   >>> [ERROR DEBUG] Pila insuficiente para operador: " + str);
                         continue;
                     }
 
@@ -417,7 +402,7 @@ public class Parser {
                     }
 
                     if (!comparacionValida) {
-                        erroresSemanticos.add("❌ ERROR: No se pueden comparar " +
+                        erroresSemanticos.add("-> ERROR: No se pueden comparar " +
                                 a.tipo.toUpperCase() + " con " + b.tipo.toUpperCase() +
                                 " usando el operador '" + str + "' (línea " + lineaActual + ")");
                         stack.push(new ExpresionResult(false, "booleanito"));
@@ -425,14 +410,12 @@ public class Parser {
                     }
 
                     boolean resultadoComparacion = aplicarComparacion(a.valor, b.valor, str);
-                    System.out.println("   >>> [DEBUG] " + a.valor + " " + str + " " + b.valor + " = " + resultadoComparacion);
 
                     stack.push(new ExpresionResult(resultadoComparacion, "booleanito"));
                 }
                 // Operadores lógicos
                 else if (esOperadorLogico(str)) {
                     if (stack.size() < 2) {
-                        System.out.println("\n   >>> [ERROR DEBUG] Pila insuficiente para operador: " + str);
                         continue;
                     }
 
@@ -442,11 +425,11 @@ public class Parser {
                     // ========== VALIDACIÓN: OPERADORES LÓGICOS SOLO ENTRE BOOLEANOS ==========
                     if (!a.tipo.equals("booleanito") || !b.tipo.equals("booleanito")) {
                         if (!a.tipo.equals("booleanito")) {
-                            erroresSemanticos.add("❌ ERROR: No se puede usar el operador lógico '" + str +
+                            erroresSemanticos.add("-> ERROR: No se puede usar el operador lógico '" + str +
                                     "' con tipo " + a.tipo.toUpperCase() + " (línea " + lineaActual + ")");
                         }
                         if (!b.tipo.equals("booleanito")) {
-                            erroresSemanticos.add("❌ ERROR: No se puede usar el operador lógico '" + str +
+                            erroresSemanticos.add("-> ERROR: No se puede usar el operador lógico '" + str +
                                     "' con tipo " + b.tipo.toUpperCase() + " (línea " + lineaActual + ")");
                         }
                         stack.push(new ExpresionResult(false, "booleanito"));
@@ -455,7 +438,6 @@ public class Parser {
                     // ========================================================================
 
                     boolean resultado = aplicarOperadorLogico(a.valorBooleano, b.valorBooleano, str);
-                    System.out.println("   >>> [DEBUG] " + a.valorBooleano + " " + str + " " + b.valorBooleano + " = " + resultado);
                     stack.push(new ExpresionResult(resultado, "booleanito"));
                 }
                 // Variable
@@ -2068,18 +2050,18 @@ public class Parser {
 
         if (!erroresReportados.contains(clave)) {
             erroresReportados.add(clave);
-            erroresSemanticos.add("❌ ERROR: " + mensaje);
-            System.out.println("\n   >>> [Accion Semantica] [ERROR] " + mensaje);
+            erroresSemanticos.add("-> ERROR: " + mensaje);
+            System.out.println("\n   >>> [Accion Semantica] [ERROR] " + mensaje + "\n");
         }
     }
 
     private void agregarWarning(String mensaje) {
         warnings.add("⚠️  WARNING: " + mensaje);
-        System.out.println("\n   >>> [Accion Semantica] [WARNING] " + mensaje);
+        System.out.println("\n   >>> [Accion Semantica] [WARNING] " + mensaje + "\n");
     }
 
     private void imprimirAccionSemantica(String mensaje) {
-        System.out.println("\n   >>> [Accion Semantica] " + mensaje);
+        System.out.println("\n   >>> [Accion Semantica] " + mensaje + "\n");
     }
 
     // =============================================================================
@@ -2090,9 +2072,6 @@ public class Parser {
         System.out.println("\n" + "=".repeat(140));
         System.out.println(" ".repeat(45) + "TABLA ÚNICA DE IDENTIFICADORES");
         System.out.println("=".repeat(140));
-
-        System.out.println("\n📋 IDENTIFICADORES DECLARADOS:");
-        System.out.println("-".repeat(140));
         System.out.printf("%-20s %-15s %-20s %-15s %-30s%n",
                 "NOMBRE", "TIPO", "VALOR", "MODIFICADOR", "SCOPE");
         System.out.println("-".repeat(140));
@@ -2120,7 +2099,7 @@ public class Parser {
         }
 
         if (!erroresSemanticos.isEmpty()) {
-            System.out.println("\n❌ ERRORES SEMÁNTICOS ENCONTRADOS:");
+            System.out.println("\n-> ERRORES SEMÁNTICOS ENCONTRADOS:");
             System.out.println("-".repeat(140));
             for (String error : erroresSemanticos) {
                 System.out.println("   " + error);
@@ -2128,7 +2107,7 @@ public class Parser {
         }
 
         if (!warnings.isEmpty()) {
-            System.out.println("\n⚠️  ADVERTENCIAS:");
+            System.out.println("\n->  ADVERTENCIAS:");
             System.out.println("-".repeat(140));
             for (String warning : warnings) {
                 System.out.println("   " + warning);
@@ -2160,9 +2139,9 @@ public class Parser {
         System.out.println("=".repeat(140));
 
         if (erroresSemanticos.isEmpty()) {
-            System.out.println("\n✅ ANÁLISIS SEMÁNTICO COMPLETADO SIN ERRORES");
+            System.out.println("\n-> ANÁLISIS SEMÁNTICO COMPLETADO SIN ERRORES");
         } else {
-            System.out.println("\n❌ ANÁLISIS SEMÁNTICO COMPLETADO CON ERRORES");
+            System.out.println("\n-> ANÁLISIS SEMÁNTICO COMPLETADO CON ERRORES");
         }
     }
 }

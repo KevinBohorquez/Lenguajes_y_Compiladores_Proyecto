@@ -16,7 +16,7 @@ public class Token {
     @Override
     public String toString() {
         String literalStr = literal == null ? "" : literal.toString();
-        return String.format("%-30s | %-15s | %-10s | %-25s",
+        return String.format("%-35s | %-35s | %-35s | %-35s",
                 type.name() + " (" + type.getCode() + ")",
                 lexeme,
                 literalStr,
