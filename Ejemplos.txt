@@ -11,7 +11,7 @@ principalsito () {
 
 favor enterito sumar(realito b, cadenita c, charsito d, enterito e) {
     podriasCrear cadenita resultado :)
-    porfavor resultado = b + c + d + e :)
+    porfavor resultado = b - c - d - e :)
     retorna resultado :)
 } :)
 
@@ -143,8 +143,9 @@ principalsito () {
 ===========================
 
 favor vacio mostrarDatos(cadenita nombre, realito altura, booleanito bol) {
+    podriasCrear charsito char :)
     porfavor nombre = true :)
-    porfavor nombre = "true" :)
+    porfavor nombre = "trues" :)
     porfavor nombre = 12 :)
     porfavor nombre = 12.19 :)
     porfavor nombre = 'a' :)
@@ -154,6 +155,7 @@ favor vacio mostrarDatos(cadenita nombre, realito altura, booleanito bol) {
     porfavor altura = 12 :)
     porfavor altura = 12.20 :)
     porfavor altura = 'a' :)
+    porfavor char = 'a' :)
 
     porfavor bol = true :)
     porfavor bol = "gaa" :)

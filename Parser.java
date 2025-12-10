@@ -1761,16 +1761,11 @@ public class Parser {
                     agregarWarning("Conversión implícita: ENTERITO → REALITO en '" + nombreVarAsignando + "'");
                 }
             } else if (tipoVariable.equals("cadenita")) {
-                // ========== NUEVA REGLA: CHARSITO → CADENITA ES VÁLIDO ==========
-                if (tipoExpresion.equals("charsito")) {
-                    // Permitir conversión implícita de char a string
-                    agregarWarning("Conversión implícita: CHARSITO → CADENITA en '" + nombreVarAsignando + "'");
-                } else if (!tipoExpresion.equals("cadenita")) {
+                if (!tipoExpresion.equals("cadenita")) {
                     agregarError("No se puede asignar " + tipoExpresion.toUpperCase() +
                             " a variable CADENITA '" + nombreVarAsignando + "' (línea " + linea + ")");
                     hayError = true;
                 }
-                // ================================================================
             } else if (tipoVariable.equals("charsito")) {
                 if (!tipoExpresion.equals("charsito")) {
                     agregarError("No se puede asignar " + tipoExpresion.toUpperCase() +
@@ -1800,17 +1795,46 @@ public class Parser {
             varAsignando.valor = resultado.valor;
             imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = " + resultado.valor);
         } else if (tipoVariable.equals("cadenita")) {
-            // Para strings, no intentamos asignar un valor numérico
-            varAsignando.valor = "";  // O mantén el valor por defecto
-            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = (cadenita válida)");
+            // ========== EXTRAER VALOR REAL DEL STRING ==========
+            String valorString = extraerValorString(expresionTokens);
+            varAsignando.valor = valorString;
+            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = \"" + valorString + "\"");
         } else if (tipoVariable.equals("charsito")) {
-            // Para chars, no intentamos asignar un valor numérico
-            varAsignando.valor = '\0';  // O mantén el valor por defecto
-            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = (charsito válido)");
+            // ========== EXTRAER VALOR REAL DEL CHAR ==========
+            char valorChar = extraerValorChar(expresionTokens);
+            varAsignando.valor = valorChar;
+            imprimirAccionSemantica("Asignando: " + nombreVarAsignando + " = '" + valorChar + "'");
         }
 
         varAsignando.inicializada = true;
         limpiarAsignacion();
+    }
+
+    private String extraerValorString(List<Object> tokens) {
+        for (Object token : tokens) {
+            if (token instanceof String) {
+                String str = (String) token;
+                if (str.startsWith("STR:")) {
+                    return str.substring(4); // Quitar el prefijo "STR:"
+                }
+            }
+        }
+        return ""; // Valor por defecto si no se encuentra
+    }
+
+    private char extraerValorChar(List<Object> tokens) {
+        for (Object token : tokens) {
+            if (token instanceof String) {
+                String str = (String) token;
+                if (str.startsWith("CHAR:")) {
+                    String charStr = str.substring(5); // Quitar el prefijo "CHAR:"
+                    if (!charStr.isEmpty()) {
+                        return charStr.charAt(0);
+                    }
+                }
+            }
+        }
+        return '\0'; // Valor por defecto si no se encuentra
     }
 
     private void limpiarAsignacion() {
@@ -2111,7 +2135,7 @@ public class Parser {
             }
         }
 
-        System.out.println("\n📊 RESUMEN:");
+        System.out.println("\n- RESUMEN:");
         System.out.println("-".repeat(140));
 
         long totalClases = tablaSimbolos.values().stream().filter(i -> i.modificador.equals("clasesita")).count();
