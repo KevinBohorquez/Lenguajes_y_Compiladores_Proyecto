@@ -25,7 +25,7 @@ principalsito () {
     podriasCrear enterito edad :)
     podriasLeer(edad) :)
 
-    siCumple (10 >= false) {
+    siCumple (true == false) {
         podriasImprimir("Eres mayor de edad") :)
     } peroSiCumple (10.2 >= "aaa") {
         podriasImprimir("Esres adolescente") :)

@@ -166,6 +166,59 @@ public class Parser {
         }
     }
 
+    // =============================================================================
+    // CÓDIGOS DE ERROR SEMÁNTICO
+    // =============================================================================
+    private static class ErrorCodes {
+        // Errores de Declaración (E001-E005)
+        static final String E001 = "E001"; // Identificador ya declarado
+        static final String E002 = "E002"; // Variable no declarada
+        static final String E003 = "E003"; // Clase ya declarada
+        static final String E004 = "E004"; // Función ya declarada
+        static final String E005 = "E005"; // Método ya declarado
+
+        // Errores de Tipos en Asignación (E010-E011)
+        static final String E010 = "E010"; // Asignación incompatible
+        static final String E011 = "E011"; // Reasignación de constante
+
+        // Errores de Operadores (E020-E022)
+        static final String E020 = "E020"; // Operador aritmético con tipo no numérico
+        static final String E021 = "E021"; // Operador lógico con tipo no booleano
+        static final String E022 = "E022"; // Comparación entre tipos incompatibles
+
+        // Errores de Expresiones Condicionales (E030-E031)
+        static final String E030 = "E030"; // Condición vacía
+        static final String E031 = "E031"; // Condición no booleana
+
+        // Errores de Switch (E040-E044)
+        static final String E040 = "E040"; // Switch sin expresión
+        static final String E041 = "E041"; // Variable no declarada en switch
+        static final String E042 = "E042"; // Expresión inválida en switch
+        static final String E043 = "E043"; // Tipo incompatible en case
+        static final String E044 = "E044"; // Valor duplicado en case
+
+        // Errores de Control de Flujo (E050-E052)
+        static final String E050 = "E050"; // 'saltear' fuera de bucle
+        static final String E051 = "E051"; // 'parar' fuera de contexto
+        static final String E052 = "E052"; // 'yo' usado fuera de clase
+
+        // Errores de Funciones (E060-E062)
+        static final String E060 = "E060"; // Función sin retorna
+        static final String E061 = "E061"; // Función no declarada
+        static final String E062 = "E062"; // 'retorna' fuera de función
+
+        // Errores de Métodos y Objetos (E070)
+        static final String E070 = "E070"; // Método no existe en clase
+
+        // Errores de Arreglos (E080-E082)
+        static final String E080 = "E080"; // Tamaño negativo
+        static final String E081 = "E081"; // Más elementos que tamaño
+        static final String E082 = "E082"; // Tipo incompatible en arreglo
+
+        // Advertencias (W001)
+        static final String W001 = "W001"; // Conversión implícita
+    }
+
     private ExpresionResult evaluarExpresion(List<Object> tokens, int lineaActual) {
         if (tokens.isEmpty()) {
             return new ExpresionResult(0, false, "enterito");
@@ -240,7 +293,7 @@ public class Parser {
         ExpresionResult resultado = evaluarExpresion(expresionTokens, lineNumber);
 
         if (!resultado.tipo.equals("booleanito")) {
-            erroresSemanticos.add("-> ERROR: La condición en " + contexto +
+            erroresSemanticos.add("-> ERROR [" + ErrorCodes.E031 + "]: La condición en " + contexto +
                     " no contiene un tipo de dato booleanito (línea " + lineNumber + ")");
         }
     }
@@ -343,11 +396,11 @@ public class Parser {
                     if (!aEsNumero || !bEsNumero) {
                         // ERROR: Intentando usar operadores aritméticos con tipos no numéricos
                         if (!aEsNumero) {
-                            erroresSemanticos.add("-> ERROR: No se puede usar el operador aritmético '" + str +
+                            erroresSemanticos.add("-> ERROR [" + ErrorCodes.E020 + "]: No se puede usar el operador aritmético '" + str +
                                     "' con tipo " + a.tipo.toUpperCase() + " (línea " + lineaActual + ")");
                         }
                         if (!bEsNumero) {
-                            erroresSemanticos.add("-> ERROR: No se puede usar el operador aritmético '" + str +
+                            erroresSemanticos.add("-> ERROR [" + ErrorCodes.E020 + "]: No se puede usar el operador aritmético '" + str +
                                     "' con tipo " + b.tipo.toUpperCase() + " (línea " + lineaActual + ")");
                         }
 
@@ -402,7 +455,7 @@ public class Parser {
                     }
 
                     if (!comparacionValida) {
-                        erroresSemanticos.add("-> ERROR: No se pueden comparar " +
+                        erroresSemanticos.add("-> ERROR [" + ErrorCodes.E022 + "]: No se pueden comparar " +
                                 a.tipo.toUpperCase() + " con " + b.tipo.toUpperCase() +
                                 " usando el operador '" + str + "' (línea " + lineaActual + ")");
                         stack.push(new ExpresionResult(false, "booleanito"));
@@ -425,11 +478,11 @@ public class Parser {
                     // ========== VALIDACIÓN: OPERADORES LÓGICOS SOLO ENTRE BOOLEANOS ==========
                     if (!a.tipo.equals("booleanito") || !b.tipo.equals("booleanito")) {
                         if (!a.tipo.equals("booleanito")) {
-                            erroresSemanticos.add("-> ERROR: No se puede usar el operador lógico '" + str +
+                            erroresSemanticos.add("-> ERROR [" + ErrorCodes.E021 + "]: No se puede usar el operador lógico '" + str +
                                     "' con tipo " + a.tipo.toUpperCase() + " (línea " + lineaActual + ")");
                         }
                         if (!b.tipo.equals("booleanito")) {
-                            erroresSemanticos.add("-> ERROR: No se puede usar el operador lógico '" + str +
+                            erroresSemanticos.add("-> ERROR [" + ErrorCodes.E021 + "]: No se puede usar el operador lógico '" + str +
                                     "' con tipo " + b.tipo.toUpperCase() + " (línea " + lineaActual + ")");
                         }
                         stack.push(new ExpresionResult(false, "booleanito"));
@@ -1050,7 +1103,7 @@ public class Parser {
 
                     // Validar tamaño >= 0
                     if (tamanoArregloDeclarado < 0) {
-                        agregarError("Tamaño de arreglo no puede ser negativo: " + tamanoArregloDeclarado + " (línea " + token.line + ")");
+                        agregarError(ErrorCodes.E080, "Tamaño de arreglo no puede ser negativo: " + tamanoArregloDeclarado + " (línea " + token.line + ")");
                     }
                 }
             }
@@ -1182,26 +1235,26 @@ public class Parser {
         // 10. CONTROL DE FLUJO
         if (terminal.equals("saltear")) {
             if (nivelBucle == 0) {
-                agregarError("'saltear' fuera de bucle (línea " + token.line + ")");
+                agregarError(ErrorCodes.E050, "'saltear' fuera de bucle (línea " + token.line + ")");
             }
         }
 
         if (terminal.equals("parar")) {
             if (!dentroDeSwitch && nivelBucle == 0) {
-                agregarError("'parar' fuera de switch o bucle (línea " + token.line + ")");
+                agregarError(ErrorCodes.E051, "'parar' fuera de switch o bucle (línea " + token.line + ")");
             }
         }
 
         if (terminal.equals("yo")) {
             if (claseActual.isEmpty()) {
-                agregarError("'yo' usado fuera de clase (línea " + token.line + ")");
+                agregarError(ErrorCodes.E052, "'yo' usado fuera de clase (línea " + token.line + ")");
             }
         }
 
         // 11. RETORNA
         if (terminal.equals("retorna")) {
             if (funcionActual.isEmpty()) {
-                agregarError("'retorna' fuera de función");
+                agregarError(ErrorCodes.E062, "'retorna' fuera de función");
             } else {
                 funcionTieneRetorno = true;
             }
@@ -1300,7 +1353,7 @@ public class Parser {
                 if (varInfo == null) varInfo = buscarIdentificador("global." + nombreVar);
 
                 if (varInfo == null) {
-                    agregarError("Variable '" + nombreVar + "' no declarada en case (línea " + tokenValor.line + ")");
+                    agregarError(ErrorCodes.E041, "Variable '" + nombreVar + "' no declarada en case (línea " + tokenValor.line + ")");
                     return;
                 }
 
@@ -1314,7 +1367,7 @@ public class Parser {
 
         // Validar que el tipo coincida con la expresión del switch
         if (!tipoActualCase.equals(tipoSwitch)) {
-            agregarError("Tipo incompatible en case: el switch evalúa tipo " +
+            agregarError(ErrorCodes.E043, "Tipo incompatible en case: el switch evalúa tipo " +
                     tipoSwitch.toUpperCase() + " (línea " + lineaSwitch +
                     ") pero el case es de tipo " + tipoActualCase.toUpperCase() +
                     " (línea " + tokenValor.line + ")");
@@ -1323,7 +1376,7 @@ public class Parser {
 
         // Validar que el valor no se repita
         if (valoresCaseVistos.contains(valorActualCase)) {
-            agregarError("Valor duplicado en case: " + valorActualCase +
+            agregarError(ErrorCodes.E044, "Valor duplicado en case: " + valorActualCase +
                     " ya fue usado en este switch (línea " + tokenValor.line + ")");
             return;
         }
@@ -1336,7 +1389,7 @@ public class Parser {
 
     private void evaluarTipoExpresionSwitch(int linea) {
         if (tokensExpresionSwitch.isEmpty()) {
-            agregarError("Switch sin expresión (línea " + linea + ")");
+            agregarError(ErrorCodes.E040, "Switch sin expresión (línea " + linea + ")");
             return;
         }
 
@@ -1366,13 +1419,13 @@ public class Parser {
                 if (varInfo == null) varInfo = buscarIdentificador("global." + nombreVar);
 
                 if (varInfo == null) {
-                    agregarError("Variable '" + nombreVar + "' no declarada en switch (línea " + linea + ")");
+                    agregarError(ErrorCodes.E041, "Variable '" + nombreVar + "' no declarada en switch (línea " + linea + ")");
                     tipoSwitch = "enterito"; // Tipo por defecto para continuar
                 } else {
                     tipoSwitch = varInfo.tipo;
                 }
             } else {
-                agregarError("Expresión inválida en switch (línea " + linea + ")");
+                agregarError(ErrorCodes.E042, "Expresión inválida en switch (línea " + linea + ")");
                 tipoSwitch = "enterito";
             }
         }
@@ -1449,7 +1502,7 @@ public class Parser {
 
         // Validar que el tipo coincida con la expresión del switch
         if (!tipoActualCase.equals(tipoSwitch)) {
-            agregarError("Tipo incompatible en case: el switch evalúa tipo " +
+            agregarError(ErrorCodes.E043, "Tipo incompatible en case: el switch evalúa tipo " +
                     tipoSwitch.toUpperCase() + " (línea " + lineaSwitch +
                     ") pero el case es de tipo " + tipoActualCase.toUpperCase() +
                     " (línea " + token.line + ")");
@@ -1458,7 +1511,7 @@ public class Parser {
 
         // Validar que el valor no se repita
         if (valoresCaseVistos.contains(valorActualCase)) {
-            agregarError("Valor duplicado en case: " + valorActualCase +
+            agregarError(ErrorCodes.E044, "Valor duplicado en case: " + valorActualCase +
                     " ya fue usado en este switch (línea " + token.line + ")");
             return;
         }
@@ -1490,7 +1543,7 @@ public class Parser {
 
         if (vieneDeAclama) {
             if (!existeFuncion(nombre)) {
-                agregarError("Función '" + nombre + "' no declarada (línea " + token.line + ")");
+                agregarError(ErrorCodes.E061, "Función '" + nombre + "' no declarada (línea " + token.line + ")");
             }
             vieneDeAclama = false;
             return;
@@ -1513,7 +1566,7 @@ public class Parser {
                 IdentificadorInfo metodoInfo = buscarIdentificador(metodoKey);
 
                 if (metodoInfo == null || !metodoInfo.modificador.equals("metodillo")) {
-                    agregarError("Método '" + nombre + "' no existe en clase '" + tipoClase + "' (línea " + token.line + ")");
+                    agregarError(ErrorCodes.E070, "Método '" + nombre + "' no existe en clase '" + tipoClase + "' (línea " + token.line + ")");
                 }
             }
 
@@ -1554,7 +1607,7 @@ public class Parser {
         String key = "global." + nombre;
 
         if (tablaSimbolos.containsKey(key)) {
-            agregarError("Clase '" + nombre + "' ya declarada en línea " + tablaSimbolos.get(key).linea);
+            agregarError(ErrorCodes.E003, "Clase '" + nombre + "' ya declarada en línea " + tablaSimbolos.get(key).linea);
             return;
         }
 
@@ -1569,7 +1622,7 @@ public class Parser {
         String key = "global." + nombre;
 
         if (tablaSimbolos.containsKey(key)) {
-            agregarError("Función '" + nombre + "' ya declarada en línea " + tablaSimbolos.get(key).linea);
+            agregarError(ErrorCodes.E004, "Función '" + nombre + "' ya declarada en línea " + tablaSimbolos.get(key).linea);
             return;
         }
 
@@ -1590,7 +1643,7 @@ public class Parser {
         String key = scope + "." + funcionActual;
 
         if (tablaSimbolos.containsKey(key)) {
-            agregarError("Método '" + funcionActual + "' ya declarado en clase " + claseActual);
+            agregarError(ErrorCodes.E005, "Método '" + funcionActual + "' ya declarado en clase " + claseActual);
             return;
         }
 
@@ -1629,7 +1682,7 @@ public class Parser {
             String key = scope + "." + idPendiente;
 
             if (tablaSimbolos.containsKey(key)) {
-                agregarError("Identificador '" + idPendiente + "' ya declarado en " + scope);
+                agregarError(ErrorCodes.E001, "Identificador '" + idPendiente + "' ya declarado en " + scope);
                 return;
             }
 
@@ -1669,12 +1722,12 @@ public class Parser {
             if (var == null) var = buscarIdentificador("global." + varNombre);
 
             if (var == null) {
-                agregarError("Variable '" + varNombre + "' no declarada (línea " + token.line + ")");
+                agregarError(ErrorCodes.E002, "Variable '" + varNombre + "' no declarada (línea " + token.line + ")");
                 return;
             }
 
             if (var.modificador.equals("constantito") && var.inicializada) {
-                agregarError("No se puede reasignar constante '" + varNombre + "' (línea " + token.line + ")");
+                agregarError(ErrorCodes.E011, "No se puede reasignar constante '" + varNombre + "' (línea " + token.line + ")");
                 return;
             }
 
@@ -1704,14 +1757,14 @@ public class Parser {
 
         // Si la expresión es booleana pero la variable NO es booleanito
         if (resultado.esBooleano && !tipoVariable.equals("booleanito")) {
-            agregarError("No se puede asignar BOOLEANITO a variable " +
+            agregarError(ErrorCodes.E010, "No se puede asignar BOOLEANITO a variable " +
                     tipoVariable.toUpperCase() + " '" + nombreVarAsignando + "' (línea " + linea + ")");
             hayError = true;
         }
 
         // Si la variable es booleanito pero la expresión NO es booleana
         if (tipoVariable.equals("booleanito") && !resultado.esBooleano) {
-            agregarError("No se puede asignar " + tipoExpresion.toUpperCase() +
+            agregarError(ErrorCodes.E010, "No se puede asignar " + tipoExpresion.toUpperCase() +
                     " a variable BOOLEANITO '" + nombreVarAsignando + "' (línea " + linea + ")");
             hayError = true;
         }
@@ -1723,34 +1776,34 @@ public class Parser {
         if (!resultado.esBooleano && !hayError) {
             if (tipoVariable.equals("enterito")) {
                 if (tipoExpresion.equals("realito")) {
-                    agregarError("No se puede asignar REALITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    agregarError(ErrorCodes.E010, "No se puede asignar REALITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
                     hayError = true;
                 } else if (tipoExpresion.equals("cadenita")) {
-                    agregarError("No se puede asignar CADENITA a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    agregarError(ErrorCodes.E010, "No se puede asignar CADENITA a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
                     hayError = true;
                 } else if (tipoExpresion.equals("charsito")) {
-                    agregarError("No se puede asignar CHARSITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    agregarError(ErrorCodes.E010, "No se puede asignar CHARSITO a variable ENTERITO '" + nombreVarAsignando + "' (línea " + linea + ")");
                     hayError = true;
                 }
             } else if (tipoVariable.equals("realito")) {
                 if (tipoExpresion.equals("cadenita")) {
-                    agregarError("No se puede asignar CADENITA a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    agregarError(ErrorCodes.E010, "No se puede asignar CADENITA a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
                     hayError = true;
                 } else if (tipoExpresion.equals("charsito")) {
-                    agregarError("No se puede asignar CHARSITO a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
+                    agregarError(ErrorCodes.E010, "No se puede asignar CHARSITO a variable REALITO '" + nombreVarAsignando + "' (línea " + linea + ")");
                     hayError = true;
                 } else if (tipoExpresion.equals("enterito")) {
-                    agregarWarning("Conversión implícita: ENTERITO → REALITO en '" + nombreVarAsignando + "'");
+                    agregarWarning(ErrorCodes.W001, "Conversión implícita: ENTERITO → REALITO en '" + nombreVarAsignando + "'");
                 }
             } else if (tipoVariable.equals("cadenita")) {
                 if (!tipoExpresion.equals("cadenita")) {
-                    agregarError("No se puede asignar " + tipoExpresion.toUpperCase() +
+                    agregarError(ErrorCodes.E010, "No se puede asignar " + tipoExpresion.toUpperCase() +
                             " a variable CADENITA '" + nombreVarAsignando + "' (línea " + linea + ")");
                     hayError = true;
                 }
             } else if (tipoVariable.equals("charsito")) {
                 if (!tipoExpresion.equals("charsito")) {
-                    agregarError("No se puede asignar " + tipoExpresion.toUpperCase() +
+                    agregarError(ErrorCodes.E010, "No se puede asignar " + tipoExpresion.toUpperCase() +
                             " a variable CHARSITO '" + nombreVarAsignando + "' (línea " + linea + ")");
                     hayError = true;
                 }
@@ -1843,7 +1896,7 @@ public class Parser {
                 dentroDeFuncion = false;
             } else if (!funcionActual.isEmpty()) {
                 if (!tipoRetornoActual.equals("vacio") && !funcionTieneRetorno) {
-                    agregarError("Función '" + funcionActual + "' debe tener 'retorna'");
+                    agregarError(ErrorCodes.E060, "Función '" + funcionActual + "' debe tener 'retorna'");
                 }
 
                 if (!claseActual.isEmpty()) {
@@ -1893,7 +1946,7 @@ public class Parser {
     private void validarArregloConstantito(int linea) {
         // 1. Verificar que no se exceda el tamaño declarado
         if (elementosArreglo.size() > tamanoArregloDeclarado) {
-            agregarError("Arreglo '" + idPendiente + "' declarado con tamaño " + tamanoArregloDeclarado +
+            agregarError(ErrorCodes.E081, "Arreglo '" + idPendiente + "' declarado con tamaño " + tamanoArregloDeclarado +
                     " pero se inicializaron " + elementosArreglo.size() + " elementos (línea " + linea + ")");
             return;
         }
@@ -1905,28 +1958,28 @@ public class Parser {
             // Validar compatibilidad según el tipo del arreglo
             if (tipoArregloActual.equals("enterito")) {
                 if (!tipoElemento.equals("enterito")) {
-                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba ENTERITO pero se encontró " +
+                    agregarError(ErrorCodes.E082, "Tipo incompatible en arreglo '" + idPendiente + "': se esperaba ENTERITO pero se encontró " +
                             tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
                 }
             } else if (tipoArregloActual.equals("realito")) {
                 // realito puede aceptar enterito (conversión implícita) o realito
                 if (!tipoElemento.equals("realito") && !tipoElemento.equals("enterito")) {
-                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba REALITO pero se encontró " +
+                    agregarError(ErrorCodes.E082, "Tipo incompatible en arreglo '" + idPendiente + "': se esperaba REALITO pero se encontró " +
                             tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
                 }
             } else if (tipoArregloActual.equals("cadenita")) {
                 if (!tipoElemento.equals("cadenita")) {
-                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba CADENITA pero se encontró " +
+                    agregarError(ErrorCodes.E082, "Tipo incompatible en arreglo '" + idPendiente + "': se esperaba CADENITA pero se encontró " +
                             tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
                 }
             } else if (tipoArregloActual.equals("charsito")) {
                 if (!tipoElemento.equals("charsito")) {
-                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba CHARSITO pero se encontró " +
+                    agregarError(ErrorCodes.E082, "Tipo incompatible en arreglo '" + idPendiente + "': se esperaba CHARSITO pero se encontró " +
                             tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
                 }
             } else if (tipoArregloActual.equals("booleanito")) {
                 if (!tipoElemento.equals("booleanito")) {
-                    agregarError("Tipo incompatible en arreglo '" + idPendiente + "': se esperaba BOOLEANITO pero se encontró " +
+                    agregarError(ErrorCodes.E082, "Tipo incompatible en arreglo '" + idPendiente + "': se esperaba BOOLEANITO pero se encontró " +
                             tipoElemento.toUpperCase() + " en posición " + i + " (línea " + linea + ")");
                 }
             }
@@ -1955,7 +2008,7 @@ public class Parser {
         IdentificadorInfo var = buscarIdentificador(scope + "." + nombre);
         if (var == null) var = buscarIdentificador("global." + nombre);
         if (var == null) {
-            agregarError("Variable '" + nombre + "' no declarada (línea " + linea + ")");
+            agregarError(ErrorCodes.E002, "Variable '" + nombre + "' no declarada (línea " + linea + ")");
         }
     }
 
@@ -2045,19 +2098,19 @@ public class Parser {
         return pilaStr;
     }
 
-    private void agregarError(String mensaje) {
+    private void agregarError(String codigo, String mensaje) {
         String clave = mensaje.toLowerCase().replaceAll("\\s+", " ");
 
         if (!erroresReportados.contains(clave)) {
             erroresReportados.add(clave);
-            erroresSemanticos.add("-> ERROR: " + mensaje);
-            System.out.println("\n   >>> [Accion Semantica] [ERROR] " + mensaje + "\n");
+            erroresSemanticos.add("-> ERROR [" + codigo + "]: " + mensaje);
+            System.out.println("\n   >>> [Accion Semantica] [ERROR] [" + codigo + "]: " + mensaje + "\n");
         }
     }
 
-    private void agregarWarning(String mensaje) {
-        warnings.add("⚠️  WARNING: " + mensaje);
-        System.out.println("\n   >>> [Accion Semantica] [WARNING] " + mensaje + "\n");
+    private void agregarWarning(String codigo, String mensaje) {
+        warnings.add("⚠️  WARNING [" + codigo + "]: " + mensaje);
+        System.out.println("\n   >>> [Accion Semantica] [WARNING] [" + codigo + "]: " + mensaje + "\n");
     }
 
     private void imprimirAccionSemantica(String mensaje) {
