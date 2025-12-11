@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 
 public class AnalizadorSintactico {
@@ -73,6 +74,8 @@ public class AnalizadorSintactico {
         System.out.println("Termine escribiendo '#' en una línea sola.\n");
     }
 
+    // Reemplaza el método run() en AnalizadorSintactico.java
+
     private static void run(String source) {
         // ANÁLISIS LÉXICO
         System.out.println("\n" + SEPARATOR);
@@ -93,8 +96,33 @@ public class AnalizadorSintactico {
         System.out.println("\n- Análisis léxico completado exitosamente.");
         System.out.println("Total de tokens: " + tokens.size());
 
-        // ANÁLISIS SINTÁCTICO
-        performSyntaxAnalysis(tokens);
+        // ============================================================
+        // FILTRAR COMENTARIOS ANTES DEL ANÁLISIS SINTÁCTICO
+        // ============================================================
+        List<Token> tokensSinComentarios = filtrarComentarios(tokens);
+
+        int comentariosEliminados = tokens.size() - tokensSinComentarios.size();
+        if (comentariosEliminados > 0) {
+            System.out.println("Comentarios filtrados: " + comentariosEliminados);
+            System.out.println("Tokens para análisis sintáctico: " + tokensSinComentarios.size());
+        }
+
+        // ANÁLISIS SINTÁCTICO (con tokens sin comentarios)
+        performSyntaxAnalysis(tokensSinComentarios);
+    }
+
+    private static List<Token> filtrarComentarios(List<Token> tokens) {
+        List<Token> tokensFiltrados = new ArrayList<>();
+
+        for (Token token : tokens) {
+            // Ignorar comentarios de línea y multilínea
+            if (token.type != TokenType.COMENTARIO_LINEA &&
+                    token.type != TokenType.COMENTARIO_MULTILINEA) {
+                tokensFiltrados.add(token);
+            }
+        }
+
+        return tokensFiltrados;
     }
 
     private static void printTokens(List<Token> tokens) {

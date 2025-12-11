@@ -1697,10 +1697,44 @@ public class Parser {
 
             IdentificadorInfo info = new IdentificadorInfo(idPendiente, tipoActual, obtenerValorDefault(tipoActual),
                     modificador, token.line, scope);
+
+            // CRÍTICO: Detectar si tiene valor inicial
+            boolean tieneValorInicial = false;
+            if (currentTokenIndex >= 2) {
+                // Buscar hacia atrás un '=' antes del ':)'
+                for (int i = currentTokenIndex - 1; i >= Math.max(0, currentTokenIndex - 10); i--) {
+                    if (tokens.get(i).type == TokenType.IGUAL) {
+                        tieneValorInicial = true;
+
+                        // Guardar el valor literal si existe
+                        if (i + 1 < tokens.size()) {
+                            Token tokenValor = tokens.get(i + 1);
+                            if (tokenValor.literal != null) {
+                                info.valor = tokenValor.literal;
+                            }
+                        }
+                        break;
+                    }
+                    // Si encontramos otro identificador o keyword, paramos
+                    if (tokens.get(i).type == TokenType.IDENTIFICADOR ||
+                            tokens.get(i).type == TokenType.IDENTIFICADOR_MAYUSCULA) {
+                        if (!tokens.get(i).lexeme.equals(idPendiente)) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Si es constante CON valor inicial, marcarla como inicializada
+            if (esConstanteActual && tieneValorInicial) {
+                info.inicializada = true;
+            }
+
             tablaSimbolos.put(key, info);
 
             imprimirAccionSemantica("Declarando: " + idPendiente + " (Tipo: " + tipoActual.toUpperCase() +
-                    ", Modificador: " + modificador + ", Scope: " + scope + ")");
+                    ", Modificador: " + modificador + ", Scope: " + scope +
+                    (info.inicializada ? ", Inicializada: SÍ" : "") + ")");
 
             idPendiente = "";
             tipoActual = "";
@@ -1726,7 +1760,9 @@ public class Parser {
                 return;
             }
 
-            if (var.modificador.equals("constantito") && var.inicializada) {
+            // VALIDACIÓN CRÍTICA: Verificar si es constante
+            if (var.modificador.equals("constantito")) {
+                // Las constantes SIEMPRE están inicializadas en su declaración
                 agregarError(ErrorCodes.E011, "No se puede reasignar constante '" + varNombre + "' (línea " + token.line + ")");
                 return;
             }
@@ -2109,7 +2145,7 @@ public class Parser {
     }
 
     private void agregarWarning(String codigo, String mensaje) {
-        warnings.add("⚠️  WARNING [" + codigo + "]: " + mensaje);
+        warnings.add("->  WARNING [" + codigo + "]: " + mensaje);
         System.out.println("\n   >>> [Accion Semantica] [WARNING] [" + codigo + "]: " + mensaje + "\n");
     }
 
